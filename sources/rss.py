@@ -24,7 +24,7 @@ async def fetch_rss_chatter(cve_id: str) -> list[ExploitRecord]:
                 resp.raise_for_status()
                 parsed = feedparser.parse(resp.text)
             except httpx.HTTPError:
-                logger.warning("RSS fetch failed", feed=feed_url)
+                logger.warning(f"RSS fetch failed for feed: {feed_url}")
                 continue
 
             for entry in parsed.entries:
