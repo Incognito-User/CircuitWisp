@@ -2,13 +2,11 @@ from typing import List
 
 import asyncio
 
-from app.models import ExploitRecord
-from app.scoring import score_exploit
-from app.sources.exploitdb import fetch_exploitdb
-from app.sources.github import fetch_github
-from app.sources.metasploit import fetch_metasploit
-from app.sources.vendor import fetch_vendor_advisories
-from app.sources.rss import fetch_rss_chatter
+from sources.exploitdb import fetch_exploitdb
+from sources.github import fetch_github
+from sources.metasploit import fetch_metasploit
+from sources.vendor import fetch_vendor_advisories
+from sources.rss import fetch_rss_chatter
 
 
 class ExploitActivitySnapshot:
