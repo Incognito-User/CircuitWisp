@@ -1,12 +1,14 @@
 from typing import List
-
 import asyncio
 
 from sources.exploitdb import fetch_exploitdb
 from sources.github import fetch_github
 from sources.metasploit import fetch_metasploit
 from sources.vendor import fetch_vendor_advisories
-from sources.rss import fetch_rss_chatter
+from sources.rss import fetch_rss_chatter, RSS_FEEDS, SOURCE_RELIABILITY, RSS_CACHE
+
+from app.models import ExploitRecord
+from app.scoring import score_exploit
 
 
 class ExploitActivitySnapshot:
@@ -79,3 +81,63 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
     )
 
     return ExploitActivitySnapshot(cve_id=cve_id, records=records)
+
+
+# ---------------------------------------------------------------------------
+# /sources diagnostic endpoint service
+# ---------------------------------------------------------------------------
+
+async def diagnose_sources() -> list[dict]:
+    """
+    Return diagnostic information about RSS feed health, caching, and reliability.
+    """
+
+    results = []
+
+    for feed_url in RSS_FEEDS:
+        domain = feed_url.split("//")[1].split("/")[0].split(".")[0]
+        reliability = SOURCE_RELIABILITY.get(domain, 0.5)
+
+        cached = RSS_CACHE.get(feed_url)
+
+        results.append({
+            "name": domain,
+            "url": feed_url,
+            "reliability": reliability,
+            "success": cached is not None,
+            "latency_ms": cached.get("latency_ms") if cached else None,
+            "cache_hit": cached is not None,
+            "error": cached.get("error") if cached else None,
+            "entries": len(cached["parsed"].entries) if cached else 0,
+        })
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# /snapshot/{cve_id} endpoint service
+# ---------------------------------------------------------------------------
+
+async def build_snapshot(cve_id: str) -> dict:
+    """
+    Build a unified CVE snapshot containing all exploit intelligence sources.
+    """
+
+    snapshot = await gather_exploits(cve_id)
+    records = snapshot.records
+
+    summary = {
+        "total_records": len(records),
+        "sources_used": len(set(r.source for r in records)),
+        "highest_reliability": max((r.reliability for r in records), default=0),
+        "earliest": min((r.published for r in records), default=None),
+        "latest": max((r.published for r in records), default=None),
+    }
+
+    return {
+        "cve_id": cve_id,
+        "total_records": summary["total_records"],
+        "sources_used": summary["sources_used"],
+        "records": [r.dict() for r in records],
+        "summary": summary,
+    }
