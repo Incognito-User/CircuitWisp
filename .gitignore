@@ -216,5 +216,21 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# --- Security Additions ---
+# Environment & Secrets
+.env
+.env.*
+secrets.json
+
+# Logs
+*.log
+
+# Cache
+.cache/
+
+# OS Junk
+.DS_Store
+Thumbs.db
+
 # Streamlit
 .streamlit/secrets.toml
