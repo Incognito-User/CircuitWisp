@@ -18,6 +18,7 @@ from app.scoring import (
     risk_level,
 )
 
+
 class ExploitActivitySnapshot:
     """
     Unified view of exploit activity for a given CVE.
@@ -97,6 +98,7 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
 async def diagnose_sources() -> list[dict]:
     """
     Return diagnostic information about RSS feed health, caching, and reliability.
+    Hardened to avoid missing-key errors and partial-cache failures.
     """
 
     results = []
@@ -107,6 +109,9 @@ async def diagnose_sources() -> list[dict]:
 
         cached = RSS_CACHE.get(feed_url)
 
+        parsed = cached.get("parsed") if cached else None
+        entries = len(getattr(parsed, "entries", [])) if parsed else 0
+
         results.append({
             "name": domain,
             "url": feed_url,
@@ -115,7 +120,7 @@ async def diagnose_sources() -> list[dict]:
             "latency_ms": cached.get("latency_ms") if cached else None,
             "cache_hit": cached is not None,
             "error": cached.get("error") if cached else None,
-            "entries": len(cached["parsed"].entries) if cached else 0,
+            "entries": entries,
         })
 
     return results
@@ -233,6 +238,12 @@ async def build_heat(cve_id: str) -> dict:
         "latest_published": latest_published.isoformat() if latest_published else None,
         "breakdown": breakdown,
     }
+
+
+# ---------------------------------------------------------------------------
+# Bulk & Compare (OWASP‑safe, no breaking changes)
+# ---------------------------------------------------------------------------
+
 async def heat_bulk(cve_ids: list[str]) -> list[dict]:
     """
     Bulk heat scoring for multiple CVEs.
