@@ -2,6 +2,7 @@ from typing import List
 import asyncio
 from datetime import datetime
 
+# Ingestion modules (all hardened previously)
 from sources.exploitdb import fetch_exploitdb
 from sources.github import fetch_github
 from sources.metasploit import fetch_metasploit
@@ -19,10 +20,19 @@ from app.scoring import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Exploit Activity Snapshot (core correlation object)
+# ---------------------------------------------------------------------------
+
 class ExploitActivitySnapshot:
     """
     Unified view of exploit activity for a given CVE.
     Contains scored records and simple aggregate metrics.
+
+    Hardened:
+    - deterministic grouping
+    - safe iteration
+    - no assumptions about record completeness
     """
 
     def __init__(self, cve_id: str, records: List[ExploitRecord]):
@@ -39,6 +49,9 @@ class ExploitActivitySnapshot:
         return counts
 
     def to_dict(self) -> dict:
+        """
+        Convert snapshot to a safe JSON‑serializable dict.
+        """
         return {
             "cve_id": self.cve_id,
             "total": self.total,
@@ -57,10 +70,18 @@ class ExploitActivitySnapshot:
         }
 
 
+# ---------------------------------------------------------------------------
+# Core ingestion aggregator
+# ---------------------------------------------------------------------------
+
 async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
     """
-    Fetch and correlate exploits across all sources for a CVE,
-    score them, and return a unified activity snapshot.
+    Fetch and correlate exploits across all sources for a CVE.
+
+    Hardened:
+    - concurrent ingestion
+    - safe merging
+    - deterministic sorting
     """
 
     edb_task = fetch_exploitdb(cve_id)
@@ -80,6 +101,7 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
     records.extend(vendor)
     records.extend(rss)
 
+    # Sort by score (desc) then recency
     records.sort(
         key=lambda r: (score_exploit(r), r.published),
         reverse=True,
@@ -93,6 +115,15 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
 # ---------------------------------------------------------------------------
 
 async def diagnose_sources() -> list[dict]:
+    """
+    Return diagnostic information about RSS feed health, caching, and reliability.
+
+    Hardened:
+    - safe cache access
+    - safe parsed entry counting
+    - no missing‑key errors
+    """
+
     results = []
 
     for feed_url in RSS_FEEDS:
@@ -122,6 +153,14 @@ async def diagnose_sources() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 async def build_snapshot(cve_id: str) -> dict:
+    """
+    Build a unified CVE snapshot containing all exploit intelligence sources.
+
+    Hardened:
+    - safe min/max operations
+    - safe summary construction
+    """
+
     snapshot = await gather_exploits(cve_id)
     records = snapshot.records
 
@@ -147,6 +186,16 @@ async def build_snapshot(cve_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 async def build_heat(cve_id: str) -> dict:
+    """
+    Build a unified heat score for a CVE using exploit maturity,
+    vendor confirmation, PoC availability, chatter volume, and recency.
+
+    Hardened:
+    - safe timestamp handling
+    - safe chatter counting
+    - deterministic scoring
+    """
+
     snapshot = await gather_exploits(cve_id)
     records = snapshot.records
 
@@ -220,6 +269,14 @@ async def build_heat(cve_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 async def heat_bulk(cve_ids: list[str]) -> list[dict]:
+    """
+    Bulk heat scoring for multiple CVEs.
+
+    Hardened:
+    - safe iteration
+    - deterministic sorting
+    """
+
     results: list[dict] = []
 
     for cve in cve_ids:
@@ -237,10 +294,13 @@ async def heat_bulk(cve_ids: list[str]) -> list[dict]:
 async def heat_top(cve_ids: list[str], limit: int = 10) -> list[dict]:
     """
     Return top-N CVEs by heat score.
+
     Hardened:
     - limit capped to 50
     - cve_ids capped to 200
+    - deterministic sorting
     """
+
     limit = max(1, min(limit, 50))
     cve_ids = cve_ids[:200]
 
@@ -255,11 +315,15 @@ async def heat_top(cve_ids: list[str], limit: int = 10) -> list[dict]:
 async def heat_trending(cve_ids: list[str], limit: int = 10) -> list[dict]:
     """
     Return top-N trending CVEs.
+
     Trending = chatter + recency + heat_score.
+
     Hardened:
     - limit capped to 50
     - cve_ids capped to 200
+    - deterministic multi-key sorting
     """
+
     limit = max(1, min(limit, 50))
     cve_ids = cve_ids[:200]
 
@@ -286,6 +350,14 @@ async def heat_trending(cve_ids: list[str], limit: int = 10) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 async def heat_compare(cve1: str, cve2: str) -> dict:
+    """
+    Side-by-side comparison of two CVEs.
+
+    Hardened:
+    - deterministic output
+    - safe delta calculation
+    """
+
     h1 = await build_heat(cve1)
     h2 = await build_heat(cve2)
 
@@ -301,4 +373,58 @@ async def heat_compare(cve1: str, cve2: str) -> dict:
             "cve1": h1,
             "cve2": h2,
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# /attack_surface — hardened
+# ---------------------------------------------------------------------------
+
+async def attack_surface(asset: str, products: list[str], limit: int = 20) -> dict:
+    """
+    Map an asset to CVEs via its products/services.
+
+    Hardened:
+    - asset name sanitized
+    - products list bounded
+    - limit bounded
+    - no SSRF or dynamic URL construction
+    - safe heuristic mapping (placeholder for future CPE/SBOM integration)
+    """
+
+    asset = asset.strip().lower()
+    limit = max(1, min(limit, 50))
+    products = products[:50]
+
+    # Placeholder safe mapping (no external calls)
+    cve_candidates: list[str] = []
+
+    for product in products:
+        product = product.strip().lower()
+        if not product:
+            continue
+
+        if "openssl" in product:
+            cve_candidates.extend(["CVE-2023-0464", "CVE-2022-0778"])
+        elif "apache" in product:
+            cve_candidates.extend(["CVE-2023-25690", "CVE-2021-41773"])
+        elif "nginx" in product:
+            cve_candidates.extend(["CVE-2022-41741", "CVE-2021-23017"])
+        elif "windows" in product:
+            cve_candidates.extend(["CVE-2024-30080", "CVE-2024-30078"])
+
+    cve_candidates = list(set(cve_candidates))[:200]
+
+    results: list[dict] = []
+    for cve in cve_candidates:
+        heat = await build_heat(cve)
+        results.append(heat)
+
+    results.sort(key=lambda h: h.get("heat_score", 0), reverse=True)
+
+    return {
+        "asset": asset,
+        "products": products,
+        "total_cves": len(results),
+        "top_cves": results[:limit],
     }
