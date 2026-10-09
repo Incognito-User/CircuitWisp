@@ -9,7 +9,8 @@ from app.service import (
     build_heat,
     heat_bulk,
     heat_compare,
-    build_timeline,   # <-- ADD THIS
+    build_timeline,
+    build_actors,
 )
 
 
@@ -115,3 +116,23 @@ async def get_heat_compare(
     if not validate_cve(cve1) or not validate_cve(cve2):
         raise HTTPException(status_code=400, detail="Invalid CVE format")
     return await heat_compare(cve1, cve2)
+
+# ---------------------------------------------------------------------------
+# /actors/{cve_id} — hardened
+# ---------------------------------------------------------------------------
+
+@router.get("/actors/{cve_id}")
+async def api_actors(cve_id: str):
+    """
+    Threat actor interest for a CVE.
+
+    Hardened:
+    - strict CVE validation (OWASP A03)
+    - bounded actor list
+    - heuristic-only, no external actor DB calls yet
+    """
+
+    if not validate_cve(cve_id):
+        raise HTTPException(status_code=400, detail="Invalid CVE format")
+
+    return await build_actors(cve_id)
