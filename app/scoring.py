@@ -2,10 +2,21 @@ from datetime import datetime, timedelta
 from app.models import ExploitRecord
 
 
+# ---------------------------------------------------------------------------
+# Base Exploit Scoring (used in /cve and /snapshot)
+# ---------------------------------------------------------------------------
+
 def score_exploit(record: ExploitRecord) -> float:
+    """
+    Deterministic scoring:
+    - base on reliability
+    - boost for recency
+    - adjust by source confidence
+    """
     base = record.reliability or 0.5
     source_weight = _source_weight(record.source)
     recency_weight = _recency_weight(record.published)
+
     score = base * source_weight * recency_weight
     return round(min(score, 1.0), 3)
 
@@ -35,13 +46,16 @@ def _recency_weight(published: datetime) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Heat Score Components
+# Heat Score Components (used in /heat)
 # ---------------------------------------------------------------------------
 
 def exploit_maturity(records: list[ExploitRecord]) -> float:
-    has_exploitdb = any(r.source == "exploitdb" for r in records)
-    has_github_poc = any(r.source == "github" for r in records)
-    has_metasploit = any(r.source == "metasploit" for r in records)
+    """
+    Returns a maturity score between 0.0 and 1.0 based on exploit development.
+    """
+    has_exploitdb = any(r.source.lower() == "exploitdb" for r in records)
+    has_github_poc = any(r.source.lower() == "github" for r in records)
+    has_metasploit = any(r.source.lower() == "metasploit" for r in records)
     has_exploitation_mention = any(
         "exploit" in (r.title.lower() + r.url.lower())
         for r in records
@@ -60,6 +74,9 @@ def exploit_maturity(records: list[ExploitRecord]) -> float:
 
 
 def vendor_confirmed(records: list[ExploitRecord]) -> bool:
+    """
+    Returns True if any authoritative vendor acknowledges the CVE.
+    """
     vendor_sources = {
         "vendor", "msrc", "cisco", "redhat", "ubuntu", "debian", "vmware"
     }
@@ -67,12 +84,15 @@ def vendor_confirmed(records: list[ExploitRecord]) -> bool:
 
 
 def poc_available(records: list[ExploitRecord]) -> bool:
+    """
+    Returns True if a PoC exists (GitHub, ExploitDB, Metasploit).
+    """
     poc_sources = {"github", "exploitdb", "metasploit"}
     return any(r.source.lower() in poc_sources for r in records)
 
 
 # ---------------------------------------------------------------------------
-# Heat Score
+# Heat Score (0–100)
 # ---------------------------------------------------------------------------
 
 def heat_score(
@@ -84,14 +104,18 @@ def heat_score(
 ) -> int:
     score = 0
 
+    # Exploit maturity (0–30)
     score += int(exploit_maturity * 30)
 
+    # PoC availability (0 or 25)
     if poc_available:
         score += 25
 
+    # Vendor confirmation (0 or 20)
     if vendor_confirmed:
         score += 20
 
+    # Chatter volume (0–15)
     if chatter_count > 10:
         score += 15
     elif chatter_count > 3:
@@ -99,6 +123,7 @@ def heat_score(
     elif chatter_count > 0:
         score += 5
 
+    # Recency (0–10)
     if latest_published:
         days = (datetime.utcnow() - latest_published).days
         if days <= 7:
@@ -107,3 +132,17 @@ def heat_score(
             score += 5
 
     return min(score, 100)
+
+
+# ---------------------------------------------------------------------------
+# Risk Level (human-friendly severity)
+# ---------------------------------------------------------------------------
+
+def risk_level(score: int) -> str:
+    if score >= 85:
+        return "Critical"
+    if score >= 60:
+        return "High"
+    if score >= 35:
+        return "Medium"
+    return "Low"
