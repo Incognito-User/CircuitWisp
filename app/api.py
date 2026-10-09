@@ -9,7 +9,9 @@ from app.service import (
     build_heat,
     heat_bulk,
     heat_compare,
+    build_timeline,   # <-- ADD THIS
 )
+
 
 # ---------------------------------------------------------------------------
 # CVE Validation (OWASP A03: Injection Prevention)
@@ -22,6 +24,25 @@ def validate_cve(cve_id: str) -> bool:
 
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# /timeline/{cve_id} — hardened
+# ---------------------------------------------------------------------------
+
+@router.get("/timeline/{cve_id}")
+async def api_timeline(cve_id: str):
+    """
+    Hardened timeline endpoint:
+    - strict CVE validation (OWASP A03)
+    - safe chronological ordering
+    - bounded output (OWASP A05)
+    - no SSRF or dynamic URL construction (OWASP A10)
+    """
+
+    if not validate_cve(cve_id):
+        raise HTTPException(status_code=400, detail="Invalid CVE format")
+
+    return await build_timeline(cve_id)
 
 
 # ---------------------------------------------------------------------------
