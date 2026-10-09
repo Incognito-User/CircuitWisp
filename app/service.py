@@ -10,13 +10,15 @@ from sources.vendor import fetch_vendor_advisories
 from sources.rss import fetch_rss_chatter, RSS_FEEDS, SOURCE_RELIABILITY, RSS_CACHE
 
 from app.models import ExploitRecord
-from app.scoring import score_exploit
 from app.scoring import (
+    score_exploit,
     exploit_maturity,
     vendor_confirmed,
     poc_available,
     heat_score,
+    risk_level,
 )
+
 
 
 class ExploitActivitySnapshot:
