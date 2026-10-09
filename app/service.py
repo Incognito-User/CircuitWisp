@@ -1,6 +1,15 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any
+
+# Normalize datetime objects
+def ensure_aware(dt: datetime) -> datetime:
+    """Convert naive datetimes to UTC-aware."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 from app.models import ExploitRecord
 from app.scoring import (
@@ -108,7 +117,12 @@ async def build_snapshot(cve_id: str) -> Dict[str, Any]:
     poc = poc_available(exploits)
     vendor_conf = vendor_confirmed(exploits)
     chatter_count = sum(1 for r in exploits if r.source == "rss")
-    latest_published = max((r.published for r in exploits), default=None)
+
+    # Normalize timestamps before comparison
+    latest_published = max(
+        (ensure_aware(r.published) for r in exploits),
+        default=None
+    )
 
     # Heat score (legacy-compatible)
     base_heat = heat_score(
@@ -166,7 +180,7 @@ async def build_timeline(cve_id: str) -> List[Dict[str, Any]]:
     # Exploit records
     for r in data["exploits"]:
         timeline.append({
-            "date": r.published.isoformat(),
+            "date": ensure_aware(r.published).isoformat(),
             "source": r.source,
             "title": r.title,
             "url": r.url,
@@ -196,7 +210,7 @@ async def build_timeline(cve_id: str) -> List[Dict[str, Any]]:
     # NVD publication
     if data["nvd"].get("description"):
         timeline.append({
-            "date": datetime.utcnow().isoformat(),
+            "date": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
             "source": "nvd",
             "title": "NVD data available",
             "url": None,
@@ -206,7 +220,7 @@ async def build_timeline(cve_id: str) -> List[Dict[str, Any]]:
     # GreyNoise exploitation
     if data["greynoise"].get("ip_count"):
         timeline.append({
-            "date": datetime.utcnow().isoformat(),
+            "date": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
             "source": "greynoise",
             "title": f"GreyNoise exploitation activity: {data['greynoise']['ip_count']} IPs",
             "url": None,
@@ -216,11 +230,15 @@ async def build_timeline(cve_id: str) -> List[Dict[str, Any]]:
     # Shodan exposure
     if data["shodan"].get("exposure_count"):
         timeline.append({
-            "date": datetime.utcnow().isoformat(),
+            "date": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
             "source": "shodan",
             "title": f"Shodan exposure: {data['shodan']['exposure_count']} hosts",
             "url": None,
             "type": "shodan",
         })
 
-    return sorted(timeline, key=lambda x: x["date"])
+    # Sort timeline by normalized datetime
+    return sorted(
+        timeline,
+        key=lambda x: ensure_aware(datetime.fromisoformat(x["date"]))
+    )
