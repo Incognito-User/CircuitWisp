@@ -1,6 +1,6 @@
 import httpx
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from app.models import ExploitRecord
@@ -14,12 +14,15 @@ CISCO_SEARCH = "https://sec.cloudapps.cisco.com/security/center/search.x"
 
 def _safe_parse_timestamp(ts: str | None) -> datetime:
     if not ts:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
     try:
         ts = ts.replace("Z", "+00:00")
-        return datetime.fromisoformat(ts)
+        parsed = datetime.fromisoformat(ts)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     except Exception:
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
 
 def _safe_reliability_vendor(vendor: str) -> float:
@@ -37,20 +40,19 @@ async def _fetch_msrc(client: httpx.AsyncClient, cve_id: str) -> List[ExploitRec
         headers["Authorization"] = f"Bearer {settings.github_token}"
 
     url = MSRC_API + cve_id
+
     try:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        logger.warning("MSRC advisory fetch failed", exc=str(exc), url=url)
-        return []
     except Exception as exc:
-        logger.warning("MSRC unexpected error", exc=str(exc), url=url)
+        # FIXED LOGGING
+        logger.warning(f"MSRC advisory fetch failed for {url}: {exc}")
         return []
 
     try:
         data = resp.json()
-    except Exception:
-        logger.warning("MSRC returned non-JSON", url=url)
+    except Exception as exc:
+        logger.warning(f"MSRC returned non-JSON for {url}: {exc}")
         return []
 
     title = data.get("DocumentTitle", f"MSRC advisory for {cve_id}")
@@ -71,23 +73,22 @@ async def _fetch_msrc(client: httpx.AsyncClient, cve_id: str) -> List[ExploitRec
 async def _fetch_cisco(client: httpx.AsyncClient, cve_id: str) -> List[ExploitRecord]:
     params = {"keyword": cve_id}
     url = CISCO_SEARCH
+
     try:
         resp = await client.get(url, params=params)
         resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        logger.warning("Cisco advisory fetch failed", exc=str(exc), url=url)
-        return []
     except Exception as exc:
-        logger.warning("Cisco unexpected error", exc=str(exc), url=url)
+        # FIXED LOGGING
+        logger.warning(f"Cisco advisory fetch failed for {url}: {exc}")
         return []
 
-    # Cisco returns HTML; we just treat presence as confirmation.
+    # Cisco returns HTML; presence = confirmation
     record = ExploitRecord(
         source="cisco",
         cve_id=cve_id,
         title=f"Cisco advisory search for {cve_id}",
         url=f"{url}?keyword={cve_id}",
-        published=datetime.utcnow(),
+        published=datetime.now(timezone.utc),
         reliability=_safe_reliability_vendor("cisco"),
     )
 
@@ -104,5 +105,5 @@ async def fetch_vendor_advisories(cve_id: str) -> List[ExploitRecord]:
         results.extend(msrc)
         results.extend(cisco)
 
-    logger.info("Vendor advisories fetched", count=len(results), cve=cve_id)
+    logger.info(f"Vendor advisories fetched for {cve_id}: {len(results)} records")
     return results
