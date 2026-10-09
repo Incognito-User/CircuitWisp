@@ -180,3 +180,39 @@ def risk_level(score: float) -> str:
     if score >= 0.2:
         return "Low"
     return "Informational"
+
+def score_exploit(record):
+    """
+    Compatibility wrapper for legacy code.
+    Uses exploit_maturity() heuristics on a single record.
+    """
+    src = record.source.lower()
+    title = record.title.lower()
+    url = record.url.lower()
+
+    # Weaponized
+    if src == "metasploit" and "modules/exploits" in url:
+        return 0.95
+    if src == "exploitdb" and "exploit" in title:
+        return 0.9
+
+    # PoC
+    if src == "github" and any(
+        kw in title for kw in ["poc", "exploit", "proof of concept", "weaponized"]
+    ):
+        return 0.85
+
+    # Vendor advisory
+    vendor_sources = {
+        "vendor", "msrc", "cisco", "redhat", "ubuntu", "debian",
+        "vmware", "oracle", "adobe", "intel"
+    }
+    if src in vendor_sources:
+        return 0.75
+
+    # RSS chatter
+    if src == "rss":
+        return 0.6
+
+    # Default
+    return 0.5
