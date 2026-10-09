@@ -1,119 +1,93 @@
 import httpx
 import logging
 from datetime import datetime
+from typing import List
 
-from app.config import settings
 from app.models import ExploitRecord
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
-
-
-async def fetch_github(cve_id: str) -> list[ExploitRecord]:
-    """
-    Hardened GitHub ingestion:
-    - Safe JSON parsing
-    - Safe timestamp parsing
-    - Safe reliability scoring
-    - Safe field extraction
-    """
-
-    params = {
-        "q": f"{cve_id} exploit proof-of-concept",
-        "sort": "updated",
-        "order": "desc",
-        "per_page": 20,
-    }
-
-    headers = {
-        "Accept": "application/vnd.github+json",
-    }
-
-    if settings.github_token:
-        headers["Authorization"] = f"Bearer {settings.github_token}"
-
-    try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-            response = await client.get(GITHUB_SEARCH_URL, params=params, headers=headers)
-            response.raise_for_status()
-
-            try:
-                data = response.json()
-            except Exception:
-                logger.error("GitHub returned non-JSON response", cve=cve_id)
-                return []
-
-    except httpx.HTTPError as exc:
-        logger.error("GitHub API request failed", exc=str(exc), cve=cve_id)
-        return []
-
-    items = data.get("items", [])
-    results: list[ExploitRecord] = []
-
-    for repo in items:
-        try:
-            updated_at = repo.get("updated_at")
-
-            # Safe timestamp parsing
-            published = _safe_parse_timestamp(updated_at)
-
-            record = ExploitRecord(
-                source="github",
-                cve_id=cve_id,
-                title=repo.get("full_name") or "Unknown Repository",
-                url=repo.get("html_url") or "",
-                published=published,
-                reliability=_estimate_repo_reliability(repo),
-            )
-
-            results.append(record)
-
-        except Exception as exc:
-            logger.warning(
-                "Failed to parse GitHub repo entry",
-                error=str(exc),
-                raw=repo,
-            )
-
-    logger.info("GitHub results fetched", count=len(results), cve=cve_id)
-    return results
+GITHUB_SEARCH_URL = "https://api.github.com/search/code"
 
 
 def _safe_parse_timestamp(ts: str | None) -> datetime:
-    """
-    Safely parse GitHub timestamps.
-    Falls back to UTC now if malformed or missing.
-    """
     if not ts:
         return datetime.utcnow()
-
     try:
-        # Normalize Z suffix
         ts = ts.replace("Z", "+00:00")
         return datetime.fromisoformat(ts)
     except Exception:
         return datetime.utcnow()
 
 
-def _estimate_repo_reliability(repo: dict) -> float:
-    """
-    Hardened reliability scoring:
-    - Safe numeric conversion
-    - Clamped values
-    """
+def _safe_reliability(title: str, url: str) -> float:
+    t = title.lower()
+    u = url.lower()
 
-    def safe_int(value):
+    if any(kw in t for kw in ["poc", "exploit", "proof of concept", "weaponized"]):
+        return 0.9
+    if any(kw in u for kw in ["poc", "exploit"]):
+        return 0.85
+    return 0.7
+
+
+async def fetch_github(cve_id: str) -> List[ExploitRecord]:
+    headers = {}
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
+
+    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         try:
-            return int(value)
+            resp = await client.get(
+                GITHUB_SEARCH_URL,
+                params={"q": f"{cve_id} in:file"},
+                headers=headers,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.error("GitHub request failed", exc=str(exc), cve=cve_id)
+            return []
+        except Exception as exc:
+            logger.error("GitHub unexpected error", exc=str(exc), cve=cve_id)
+            return []
+
+        try:
+            data = resp.json()
         except Exception:
-            return 0
+            logger.error("GitHub returned non-JSON response", cve=cve_id)
+            return []
 
-    stars = safe_int(repo.get("stargazers_count"))
-    forks = safe_int(repo.get("forks_count"))
-    watchers = safe_int(repo.get("watchers_count"))
+        items = data.get("items", [])
+        results: List[ExploitRecord] = []
 
-    score = (stars * 0.01) + (forks * 0.02) + (watchers * 0.005)
-    score = max(0.0, min(1.0, score))
+        for item in items:
+            try:
+                file_url = item.get("html_url", "")
+                file_name = item.get("name", "GitHub file")
 
-    return round(score, 2)
+                if not file_url:
+                    continue
+
+                reliability = _safe_reliability(file_name, file_url)
+
+                record = ExploitRecord(
+                    source="github",
+                    cve_id=cve_id,
+                    title=file_name,
+                    url=file_url,
+                    published=_safe_parse_timestamp(item.get("git_url")),
+                    reliability=reliability,
+                )
+
+                results.append(record)
+
+            except Exception as exc:
+                logger.warning(
+                    "Failed to parse GitHub entry",
+                    error=str(exc),
+                    raw=item,
+                )
+
+        logger.info("GitHub results fetched", count=len(results), cve=cve_id)
+        return results
