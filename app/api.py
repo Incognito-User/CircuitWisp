@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List
+import re
 
 from app.service import (
     gather_exploits,
@@ -9,10 +10,23 @@ from app.service import (
     heat_bulk,
     heat_compare,
 )
-from app.validation import validate_cve
+
+# ---------------------------------------------------------------------------
+# CVE Validation (OWASP A03: Injection Prevention)
+# ---------------------------------------------------------------------------
+
+CVE_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,7}$")
+
+def validate_cve(cve_id: str) -> bool:
+    return bool(CVE_PATTERN.match(cve_id))
+
 
 router = APIRouter()
 
+
+# ---------------------------------------------------------------------------
+# /cve/{cve_id}
+# ---------------------------------------------------------------------------
 
 @router.get("/cve/{cve_id}")
 async def get_cve_activity(cve_id: str):
@@ -22,10 +36,18 @@ async def get_cve_activity(cve_id: str):
     return snapshot.to_dict()
 
 
+# ---------------------------------------------------------------------------
+# /sources
+# ---------------------------------------------------------------------------
+
 @router.get("/sources")
 async def get_sources():
     return await diagnose_sources()
 
+
+# ---------------------------------------------------------------------------
+# /snapshot/{cve_id}
+# ---------------------------------------------------------------------------
 
 @router.get("/snapshot/{cve_id}")
 async def get_snapshot(cve_id: str):
@@ -34,12 +56,20 @@ async def get_snapshot(cve_id: str):
     return await build_snapshot(cve_id)
 
 
+# ---------------------------------------------------------------------------
+# /heat/{cve_id}
+# ---------------------------------------------------------------------------
+
 @router.get("/heat/{cve_id}")
 async def get_heat(cve_id: str):
     if not validate_cve(cve_id):
         raise HTTPException(status_code=400, detail="Invalid CVE format")
     return await build_heat(cve_id)
 
+
+# ---------------------------------------------------------------------------
+# /heat/bulk
+# ---------------------------------------------------------------------------
 
 @router.post("/heat/bulk")
 async def get_heat_bulk(cves: List[str]):
@@ -51,6 +81,10 @@ async def get_heat_bulk(cves: List[str]):
         )
     return await heat_bulk(cves)
 
+
+# ---------------------------------------------------------------------------
+# /heat/compare
+# ---------------------------------------------------------------------------
 
 @router.get("/heat/compare")
 async def get_heat_compare(
