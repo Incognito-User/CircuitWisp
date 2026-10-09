@@ -1,7 +1,6 @@
 from typing import List
 import asyncio
 from datetime import datetime
-from app.scoring import risk_level
 
 from sources.exploitdb import fetch_exploitdb
 from sources.github import fetch_github
@@ -18,8 +17,6 @@ from app.scoring import (
     heat_score,
     risk_level,
 )
-
-
 
 class ExploitActivitySnapshot:
     """
@@ -235,4 +232,39 @@ async def build_heat(cve_id: str) -> dict:
         "chatter_count": chatter_count,
         "latest_published": latest_published.isoformat() if latest_published else None,
         "breakdown": breakdown,
+    }
+async def heat_bulk(cve_ids: list[str]) -> list[dict]:
+    """
+    Bulk heat scoring for multiple CVEs.
+    Returns a list of /heat-style objects, sorted by heat_score desc.
+    """
+    results: list[dict] = []
+
+    for cve in cve_ids:
+        heat = await build_heat(cve)
+        results.append(heat)
+
+    results.sort(key=lambda h: h.get("heat_score", 0), reverse=True)
+    return results
+
+
+async def heat_compare(cve1: str, cve2: str) -> dict:
+    """
+    Side-by-side comparison of two CVEs by heat score and risk level.
+    """
+    h1 = await build_heat(cve1)
+    h2 = await build_heat(cve2)
+
+    return {
+        "cve1": h1["cve_id"],
+        "cve2": h2["cve_id"],
+        "cve1_heat": h1["heat_score"],
+        "cve2_heat": h2["heat_score"],
+        "cve1_risk": h1["risk_level"],
+        "cve2_risk": h2["risk_level"],
+        "delta_heat": h1["heat_score"] - h2["heat_score"],
+        "details": {
+            "cve1": h1,
+            "cve2": h2,
+        },
     }
