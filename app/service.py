@@ -63,7 +63,6 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
     score them, and return a unified activity snapshot.
     """
 
-    # Run all sources concurrently
     edb_task = fetch_exploitdb(cve_id)
     gh_task = fetch_github(cve_id)
     ms_task = fetch_metasploit(cve_id)
@@ -74,7 +73,6 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
         edb_task, gh_task, ms_task, vendor_task, rss_task
     )
 
-    # Merge all records
     records: List[ExploitRecord] = []
     records.extend(edb)
     records.extend(gh)
@@ -82,7 +80,6 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
     records.extend(vendor)
     records.extend(rss)
 
-    # Sort by score (desc) then recency
     records.sort(
         key=lambda r: (score_exploit(r), r.published),
         reverse=True,
@@ -96,11 +93,6 @@ async def gather_exploits(cve_id: str) -> ExploitActivitySnapshot:
 # ---------------------------------------------------------------------------
 
 async def diagnose_sources() -> list[dict]:
-    """
-    Return diagnostic information about RSS feed health, caching, and reliability.
-    Hardened to avoid missing-key errors and partial-cache failures.
-    """
-
     results = []
 
     for feed_url in RSS_FEEDS:
@@ -108,7 +100,6 @@ async def diagnose_sources() -> list[dict]:
         reliability = SOURCE_RELIABILITY.get(domain, 0.5)
 
         cached = RSS_CACHE.get(feed_url)
-
         parsed = cached.get("parsed") if cached else None
         entries = len(getattr(parsed, "entries", [])) if parsed else 0
 
@@ -127,14 +118,10 @@ async def diagnose_sources() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# /snapshot/{cve_id} endpoint service
+# /snapshot/{cve_id}
 # ---------------------------------------------------------------------------
 
 async def build_snapshot(cve_id: str) -> dict:
-    """
-    Build a unified CVE snapshot containing all exploit intelligence sources.
-    """
-
     snapshot = await gather_exploits(cve_id)
     records = snapshot.records
 
@@ -156,30 +143,19 @@ async def build_snapshot(cve_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# /heat/{cve_id} endpoint service
+# /heat/{cve_id}
 # ---------------------------------------------------------------------------
 
 async def build_heat(cve_id: str) -> dict:
-    """
-    Build a unified heat score for a CVE using exploit maturity,
-    vendor confirmation, PoC availability, chatter volume, and recency.
-    """
-
     snapshot = await gather_exploits(cve_id)
     records = snapshot.records
 
-    # Core components
     maturity = exploit_maturity(records)
     vendor_conf = vendor_confirmed(records)
     poc = poc_available(records)
-
-    # Chatter volume (RSS)
     chatter_count = sum(1 for r in records if r.source.lower() == "rss")
-
-    # Recency
     latest_published = max((r.published for r in records), default=None)
 
-    # Final heat score
     score = heat_score(
         exploit_maturity=maturity,
         poc_available=poc,
@@ -188,7 +164,6 @@ async def build_heat(cve_id: str) -> dict:
         latest_published=latest_published,
     )
 
-    # Human-readable explanation of why the score is what it is
     breakdown = {
         "exploit_maturity": (
             "High exploit maturity (weaponized or actively exploited)"
@@ -241,14 +216,10 @@ async def build_heat(cve_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Bulk & Compare (OWASP‑safe, no breaking changes)
+# Bulk heat scoring
 # ---------------------------------------------------------------------------
 
 async def heat_bulk(cve_ids: list[str]) -> list[dict]:
-    """
-    Bulk heat scoring for multiple CVEs.
-    Returns a list of /heat-style objects, sorted by heat_score desc.
-    """
     results: list[dict] = []
 
     for cve in cve_ids:
@@ -259,10 +230,62 @@ async def heat_bulk(cve_ids: list[str]) -> list[dict]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# /heat/top — hardened
+# ---------------------------------------------------------------------------
+
+async def heat_top(cve_ids: list[str], limit: int = 10) -> list[dict]:
+    """
+    Return top-N CVEs by heat score.
+    Hardened:
+    - limit capped to 50
+    - cve_ids capped to 200
+    """
+    limit = max(1, min(limit, 50))
+    cve_ids = cve_ids[:200]
+
+    results = await heat_bulk(cve_ids)
+    return results[:limit]
+
+
+# ---------------------------------------------------------------------------
+# /heat/trending — hardened
+# ---------------------------------------------------------------------------
+
+async def heat_trending(cve_ids: list[str], limit: int = 10) -> list[dict]:
+    """
+    Return top-N trending CVEs.
+    Trending = chatter + recency + heat_score.
+    Hardened:
+    - limit capped to 50
+    - cve_ids capped to 200
+    """
+    limit = max(1, min(limit, 50))
+    cve_ids = cve_ids[:200]
+
+    results: list[dict] = []
+
+    for cve in cve_ids:
+        heat = await build_heat(cve)
+        results.append(heat)
+
+    results.sort(
+        key=lambda h: (
+            h.get("chatter_count", 0),
+            h.get("latest_published") or "",
+            h.get("heat_score", 0),
+        ),
+        reverse=True,
+    )
+
+    return results[:limit]
+
+
+# ---------------------------------------------------------------------------
+# /heat/compare
+# ---------------------------------------------------------------------------
+
 async def heat_compare(cve1: str, cve2: str) -> dict:
-    """
-    Side-by-side comparison of two CVEs by heat score and risk level.
-    """
     h1 = await build_heat(cve1)
     h2 = await build_heat(cve2)
 
