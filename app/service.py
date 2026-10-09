@@ -428,3 +428,59 @@ async def attack_surface(asset: str, products: list[str], limit: int = 20) -> di
         "total_cves": len(results),
         "top_cves": results[:limit],
     }
+# ---------------------------------------------------------------------------
+# /timeline/{cve_id} — hardened
+# ---------------------------------------------------------------------------
+
+async def build_timeline(cve_id: str) -> dict:
+    """
+    Build a chronological exploit evolution timeline for a CVE.
+
+    Hardened:
+    - safe timestamp normalization
+    - bounded event count
+    - deterministic sorting
+    - no SSRF or dynamic URL construction
+    """
+
+    snapshot = await gather_exploits(cve_id)
+    records = snapshot.records
+
+    # Normalize timestamps (fallback to now)
+    events = []
+    for r in records:
+        ts = r.published or datetime.utcnow()
+
+        events.append({
+            "timestamp": ts.isoformat(),
+            "source": r.source,
+            "title": r.title,
+            "url": r.url,
+            "reliability": r.reliability,
+            "score": score_exploit(r),
+            "metadata": {
+                "is_poc": r.source.lower() in {"github", "exploitdb", "metasploit"},
+                "is_vendor": r.source.lower() in {
+                    "vendor", "msrc", "cisco", "redhat", "ubuntu", "debian", "vmware"
+                },
+                "is_chatter": r.source.lower() == "rss",
+            }
+        })
+
+    # Sort chronologically
+    events.sort(key=lambda e: e["timestamp"])
+
+    # Bound output (OWASP A05: prevent unbounded responses)
+    events = events[:500]
+
+    # Timeline summary
+    first_seen = events[0]["timestamp"] if events else None
+    last_seen = events[-1]["timestamp"] if events else None
+
+    return {
+        "cve_id": cve_id,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
+        "total_events": len(events),
+        "timeline": events,
+    }
