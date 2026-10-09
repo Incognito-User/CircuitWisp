@@ -3,6 +3,29 @@ from app.models import ExploitRecord
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _safe_reliability(value) -> float:
+    """Clamp reliability to [0.0, 1.0] and ensure numeric type."""
+    try:
+        val = float(value)
+    except Exception:
+        val = 0.5
+    return max(0.0, min(1.0, val))
+
+
+def _safe_datetime(dt) -> datetime:
+    """Ensure published timestamps are valid datetimes."""
+    if isinstance(dt, datetime):
+        return dt
+    try:
+        return datetime.fromisoformat(str(dt).replace("Z", "+00:00"))
+    except Exception:
+        return datetime.utcnow()
+
+
+# ---------------------------------------------------------------------------
 # Base Exploit Scoring (used in /cve and /snapshot)
 # ---------------------------------------------------------------------------
 
@@ -13,9 +36,10 @@ def score_exploit(record: ExploitRecord) -> float:
     - boost for recency
     - adjust by source confidence
     """
-    base = record.reliability or 0.5
+
+    base = _safe_reliability(record.reliability)
     source_weight = _source_weight(record.source)
-    recency_weight = _recency_weight(record.published)
+    recency_weight = _recency_weight(_safe_datetime(record.published))
 
     score = base * source_weight * recency_weight
     return round(min(score, 1.0), 3)
@@ -33,7 +57,7 @@ def _source_weight(source: str) -> float:
 
 
 def _recency_weight(published: datetime) -> float:
-    days = (datetime.utcnow() - published).days
+    days = max(0, (datetime.utcnow() - published).days)
     if days <= 1:
         return 1.0
     if days <= 7:
@@ -52,12 +76,17 @@ def _recency_weight(published: datetime) -> float:
 def exploit_maturity(records: list[ExploitRecord]) -> float:
     """
     Returns a maturity score between 0.0 and 1.0 based on exploit development.
+    Hardened to avoid false positives.
     """
+
     has_exploitdb = any(r.source.lower() == "exploitdb" for r in records)
     has_github_poc = any(r.source.lower() == "github" for r in records)
     has_metasploit = any(r.source.lower() == "metasploit" for r in records)
+
+    # Tightened exploit keyword detection
+    exploitation_keywords = ["poc", "proof-of-concept", "weaponized", "metasploit"]
     has_exploitation_mention = any(
-        "exploit" in (r.title.lower() + r.url.lower())
+        any(kw in (r.title.lower() + r.url.lower()) for kw in exploitation_keywords)
         for r in records
     )
 
@@ -74,9 +103,6 @@ def exploit_maturity(records: list[ExploitRecord]) -> float:
 
 
 def vendor_confirmed(records: list[ExploitRecord]) -> bool:
-    """
-    Returns True if any authoritative vendor acknowledges the CVE.
-    """
     vendor_sources = {
         "vendor", "msrc", "cisco", "redhat", "ubuntu", "debian", "vmware"
     }
@@ -84,9 +110,6 @@ def vendor_confirmed(records: list[ExploitRecord]) -> bool:
 
 
 def poc_available(records: list[ExploitRecord]) -> bool:
-    """
-    Returns True if a PoC exists (GitHub, ExploitDB, Metasploit).
-    """
     poc_sources = {"github", "exploitdb", "metasploit"}
     return any(r.source.lower() in poc_sources for r in records)
 
@@ -102,20 +125,18 @@ def heat_score(
     chatter_count: int,
     latest_published: datetime,
 ) -> int:
+
+    latest_published = _safe_datetime(latest_published)
     score = 0
 
-    # Exploit maturity (0–30)
     score += int(exploit_maturity * 30)
 
-    # PoC availability (0 or 25)
     if poc_available:
         score += 25
 
-    # Vendor confirmation (0 or 20)
     if vendor_confirmed:
         score += 20
 
-    # Chatter volume (0–15)
     if chatter_count > 10:
         score += 15
     elif chatter_count > 3:
@@ -123,13 +144,11 @@ def heat_score(
     elif chatter_count > 0:
         score += 5
 
-    # Recency (0–10)
-    if latest_published:
-        days = (datetime.utcnow() - latest_published).days
-        if days <= 7:
-            score += 10
-        elif days <= 30:
-            score += 5
+    days = max(0, (datetime.utcnow() - latest_published).days)
+    if days <= 7:
+        score += 10
+    elif days <= 30:
+        score += 5
 
     return min(score, 100)
 
