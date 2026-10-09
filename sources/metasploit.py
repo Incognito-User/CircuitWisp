@@ -1,6 +1,6 @@
 import httpx
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Dict, List
 
 from app.models import ExploitRecord
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 GITHUB_SEARCH_URL = "https://api.github.com/search/code"
 
 # ---------------------------------------------------------------------------
-# TOKEN ROTATION (simple round-robin)
+# Token rotation
 # ---------------------------------------------------------------------------
 
 GITHUB_TOKENS: List[str] = []
@@ -31,7 +31,7 @@ def get_auth_headers() -> Dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# SIMPLE IN-MEMORY CACHE
+# Simple in-memory cache
 # ---------------------------------------------------------------------------
 
 CACHE_TTL = timedelta(minutes=10)
@@ -42,7 +42,7 @@ def _get_cache(key: str):
     entry = _cache.get(key)
     if not entry:
         return None
-    if entry["expires_at"] < datetime.now(timezone.utc):
+    if entry["expires_at"] < datetime.utcnow():
         _cache.pop(key, None)
         return None
     return entry["value"]
@@ -51,12 +51,12 @@ def _get_cache(key: str):
 def _set_cache(key: str, value):
     _cache[key] = {
         "value": value,
-        "expires_at": datetime.now(timezone.utc) + CACHE_TTL,
+        "expires_at": datetime.utcnow() + CACHE_TTL,
     }
 
 
 # ---------------------------------------------------------------------------
-# FUTURE-PROOF EXPLOIT NAME MAP (seeded, then auto-extended)
+# Exploit name map (seeded, then auto-extended)
 # ---------------------------------------------------------------------------
 
 MSF_NAME_MAP: Dict[str, List[str]] = {
@@ -69,17 +69,13 @@ MSF_NAME_MAP: Dict[str, List[str]] = {
 
 
 def _safe_parse_timestamp(ts: str | None) -> datetime:
-    default_dt = datetime.now(timezone.utc)
     if not ts:
-        return default_dt
+        return datetime.utcnow()
     try:
         ts = ts.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(ts)
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+        return datetime.fromisoformat(ts)
     except Exception:
-        return default_dt
+        return datetime.utcnow()
 
 
 def _safe_reliability(value) -> float:
@@ -91,13 +87,7 @@ def _safe_reliability(value) -> float:
 
 
 def _score_exploit(file_name: str, file_path: str) -> float:
-    """
-    Very simple scoring:
-    - exploit modules > auxiliary > docs/specs
-    - smb/rdp/follina/etc get a small boost
-    """
     score = 0.7
-
     path = file_path.lower()
     name = file_name.lower()
 
@@ -114,9 +104,6 @@ def _score_exploit(file_name: str, file_path: str) -> float:
 
 
 def _auto_learn_names(cve_id: str, items: List[Dict]):
-    """
-    Auto-extend MSF_NAME_MAP based on module paths and names.
-    """
     names = MSF_NAME_MAP.setdefault(cve_id, [])
     for item in items:
         path = (item.get("path") or "").lower()
@@ -124,7 +111,7 @@ def _auto_learn_names(cve_id: str, items: List[Dict]):
 
         if "modules/exploits" in path or "modules/auxiliary" in path:
             base = name.replace(".rb", "")
-            if base not in names:
+            if base and base not in names:
                 names.append(base)
 
 
@@ -147,16 +134,7 @@ async def _github_search(client: httpx.AsyncClient, query: str) -> Dict:
 
 
 async def fetch_metasploit(cve_id: str) -> List[ExploitRecord]:
-    """
-    Advanced Metasploit ingestion:
-    - CVE search + exploit-name search
-    - auto-learning module names
-    - caching
-    - token rotation
-    - scoring
-    """
     queries: List[str] = [cve_id]
-
     if cve_id in MSF_NAME_MAP:
         queries.extend(MSF_NAME_MAP[cve_id])
 
