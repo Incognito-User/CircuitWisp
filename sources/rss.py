@@ -3,6 +3,7 @@ import asyncio
 import re
 from datetime import datetime
 from time import time
+from urllib.parse import urlparse
 
 import httpx
 import feedparser
@@ -12,7 +13,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Concurrency limit
 SEM = asyncio.Semaphore(5)
 
 RSS_FEEDS = [
@@ -33,41 +33,6 @@ RSS_FEEDS = [
     "https://feeds.securityweek.com/securityweek",
     "https://www.darkreading.com/rss.xml",
 ]
-
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# SOURCE RELIABILITY SCORING (CTI TRADECRAFT)
-#
-# These numeric reliability scores are based on standard Cyber Threat
-# Intelligence (CTI) source evaluation practices. CTI teams typically use
-# the classic intelligence model:
-#
-#   - Source Reliability (A–F)
-#   - Information Credibility (1–6)
-#
-# Vendors often convert these into numeric values (0.0–1.0). The scores
-# below reflect how authoritative, consistent, and close to exploitation
-# each feed is:
-#
-#   1.0  - Vendor advisories (MSRC, Cisco, Red Hat, Ubuntu, Debian, VMware)
-#          These are primary, authoritative sources publishing official CVEs,
-#          patches, exploitation status, and security bulletins.
-#
-#   0.9–0.95 - Exploit/PoC feeds (PacketStorm, AttackerKB, Seclists)
-#              High-signal sources close to real exploitation activity.
-#              They frequently publish PoCs, exploit chatter, and technical
-#              vulnerability discussions.
-#
-#   0.7–0.9 - Security news / research (Krebs, BleepingComputer, HackerNews,
-#             SecurityWeek, DarkReading)
-#             These are secondary editorial sources. They provide context,
-#             early reporting, and analysis, but are not authoritative.
-#
-# These values can be tuned or expanded later, or replaced with a dynamic
-# scoring engine that incorporates exploit maturity, vendor confirmation,
-# PoC availability, and threat actor interest.
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
 
 SOURCE_RELIABILITY = {
     "packetstormsecurity": 0.9,
@@ -99,52 +64,48 @@ async def fetch_rss_chatter(cve_id: str) -> list[ExploitRecord]:
 
     async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
         for feed_url in RSS_FEEDS:
-            domain = feed_url.split("//")[1].split("/")[0].split(".")[0]
+
+            domain = _extract_domain(feed_url)
             reliability = SOURCE_RELIABILITY.get(domain, 0.5)
 
             try:
-                # Check cache first
                 cached = RSS_CACHE.get(feed_url)
                 if cached and (time() - cached["timestamp"] < CACHE_TTL):
                     parsed = cached["parsed"]
                 else:
-                    # Limit ONLY the network request
                     async with SEM:
                         resp = await client.get(feed_url)
                         resp.raise_for_status()
 
                     parsed = feedparser.parse(resp.text)
-                    RSS_CACHE[feed_url] = {"parsed": parsed, "timestamp": time()}
 
-            except httpx.HTTPError:
-                logger.warning(f"RSS fetch failed for feed: {feed_url}")
+                    RSS_CACHE[feed_url] = {
+                        "parsed": parsed,
+                        "timestamp": time(),
+                        "bozo": parsed.bozo,
+                        "error": str(parsed.bozo_exception) if parsed.bozo else None,
+                        "entries": len(parsed.entries),
+                    }
+
+            except httpx.HTTPError as exc:
+                logger.warning("RSS fetch failed", feed=feed_url, error=str(exc))
                 continue
 
             for entry in parsed.entries:
                 title = entry.get("title", "")
-                summary = (
-                    entry.get("summary")
-                    or entry.get("description")
-                    or entry.get("content", [{}])[0].get("value")
-                    or ""
-                )
+                summary = _extract_summary(entry)
 
                 if not pattern.search(title) and not pattern.search(summary):
                     continue
 
-                dedupe_key = (title, entry.get("link", ""))
+                dedupe_key = entry.get("id") or entry.get("link") or title
                 if dedupe_key in seen:
                     continue
                 seen.add(dedupe_key)
 
-                published = datetime.utcnow()
+                published = _extract_timestamp(entry)
 
-                tags = entry.get("tags", [])
-                feed_type = (
-                    "vendor" if domain in ["msrc", "cisco", "redhat", "ubuntu", "debian", "vmware"]
-                    else "exploit" if domain in ["packetstormsecurity", "seclists", "attackerkb"]
-                    else "news"
-                )
+                feed_type = _classify_feed(domain)
 
                 record = ExploitRecord(
                     source="rss",
@@ -156,11 +117,51 @@ async def fetch_rss_chatter(cve_id: str) -> list[ExploitRecord]:
                     metadata={
                         "feed_domain": domain,
                         "feed_type": feed_type,
-                        "tags": tags,
+                        "tags": entry.get("tags", []),
                     }
                 )
 
                 results.append(record)
 
-    logger.info(f"RSS chatter results: count={len(results)}, cve={cve_id}")
+    logger.info("RSS chatter results", count=len(results), cve=cve_id)
     return results
+
+
+def _extract_domain(url: str) -> str:
+    """Safe domain extraction."""
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    return host.split(".")[0].lower()
+
+
+def _extract_summary(entry: dict) -> str:
+    """Safe summary extraction."""
+    if entry.get("summary"):
+        return entry["summary"]
+    if entry.get("description"):
+        return entry["description"]
+    content = entry.get("content")
+    if isinstance(content, list) and content:
+        return content[0].get("value", "")
+    return ""
+
+
+def _extract_timestamp(entry: dict) -> datetime:
+    """Extract published/updated timestamps safely."""
+    for key in ["published", "updated", "created", "pubDate"]:
+        ts = entry.get(key)
+        if ts:
+            try:
+                return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except Exception:
+                continue
+    return datetime.utcnow()
+
+
+def _classify_feed(domain: str) -> str:
+    """Classify feed type based on domain."""
+    if domain in ["msrc", "cisco", "redhat", "ubuntu", "debian", "vmware"]:
+        return "vendor"
+    if domain in ["packetstormsecurity", "seclists", "attackerkb"]:
+        return "exploit"
+    return "news"
