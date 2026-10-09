@@ -1,121 +1,136 @@
 from datetime import datetime, timedelta
-from app.models import ExploitRecord
+
+# ---------------------------------------------------------------------------
+# Normalization helper
+# ---------------------------------------------------------------------------
+
+def normalize(value, max_value):
+    if max_value == 0:
+        return 0.0
+    return max(0.0, min(1.0, value / max_value))
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 1️⃣ Updated scoring model (weight Metasploit more heavily)
 # ---------------------------------------------------------------------------
 
-def _safe_reliability(value) -> float:
-    """Clamp reliability to [0.0, 1.0] and ensure numeric type."""
-    try:
-        val = float(value)
-    except Exception:
-        val = 0.5
-    return max(0.0, min(1.0, val))
-
-
-def _safe_datetime(dt) -> datetime:
-    """Ensure published timestamps are valid datetimes."""
-    if isinstance(dt, datetime):
-        return dt
-    try:
-        return datetime.fromisoformat(str(dt).replace("Z", "+00:00"))
-    except Exception:
-        return datetime.utcnow()
-
-
-# ---------------------------------------------------------------------------
-# Base Exploit Scoring (used in /cve and /snapshot)
-# ---------------------------------------------------------------------------
-
-def score_exploit(record: ExploitRecord) -> float:
+def exploitation_maturity_score(records):
     """
-    Deterministic scoring:
-    - base on reliability
-    - boost for recency
-    - adjust by source confidence
+    Weighted exploitation maturity:
+    - Metasploit modules get highest weight
+    - ExploitDB + GitHub PoCs get medium weight
+    - Vendor + RSS get low weight
     """
+    if not records:
+        return 0.0
 
-    base = _safe_reliability(record.reliability)
-    source_weight = _source_weight(record.source)
-    recency_weight = _recency_weight(_safe_datetime(record.published))
+    score = 0.0
 
-    score = base * source_weight * recency_weight
-    return round(min(score, 1.0), 3)
+    for r in records:
+        src = r.source.lower()
+        base = r.reliability
 
+        if src == "metasploit":
+            score += base * 1.3
+        elif src in {"exploitdb", "github"}:
+            score += base * 1.1
+        else:
+            score += base * 0.7
 
-def _source_weight(source: str) -> float:
-    weights = {
-        "exploitdb": 1.0,
-        "github": 0.8,
-        "metasploit": 1.0,
-        "vendor": 0.9,
-        "rss": 0.6,
-    }
-    return weights.get(source.lower(), 0.5)
-
-
-def _recency_weight(published: datetime) -> float:
-    days = max(0, (datetime.utcnow() - published).days)
-    if days <= 1:
-        return 1.0
-    if days <= 7:
-        return 0.9
-    if days <= 30:
-        return 0.8
-    if days <= 180:
-        return 0.7
-    return 0.5
+    return normalize(score, max_value=len(records))
 
 
 # ---------------------------------------------------------------------------
-# Heat Score Components (used in /heat)
+# 2️⃣ Updated exploit_maturity (detect weaponization)
 # ---------------------------------------------------------------------------
 
-def exploit_maturity(records: list[ExploitRecord]) -> float:
+def exploit_maturity(records) -> float:
     """
-    Returns a maturity score between 0.0 and 1.0 based on exploit development.
-    Hardened to avoid false positives.
+    0.0–1.0 scale:
+    - 0.8+ weaponized (Metasploit exploit modules, ExploitDB exploits)
+    - 0.5+ PoCs (GitHub PoCs, ExploitDB PoCs)
+    - <0.3 low maturity
     """
+    if not records:
+        return 0.0
 
-    has_exploitdb = any(r.source.lower() == "exploitdb" for r in records)
-    has_github_poc = any(r.source.lower() == "github" for r in records)
-    has_metasploit = any(r.source.lower() == "metasploit" for r in records)
+    score = 0.0
 
-    # Tightened exploit keyword detection
-    exploitation_keywords = ["poc", "proof-of-concept", "weaponized", "metasploit"]
-    has_exploitation_mention = any(
-        any(kw in (r.title.lower() + r.url.lower()) for kw in exploitation_keywords)
-        for r in records
-    )
+    for r in records:
+        src = r.source.lower()
+        title = r.title.lower()
+        url = r.url.lower()
 
-    maturity = 0.0
+        # Weaponized exploit indicators
+        if src == "metasploit" and "modules/exploits" in url:
+            score += 1.0
+        elif src == "exploitdb" and "exploit" in title:
+            score += 0.9
 
-    if has_exploitdb or has_github_poc:
-        maturity = max(maturity, 0.3)
-    if has_metasploit:
-        maturity = max(maturity, 0.6)
-    if has_exploitation_mention:
-        maturity = max(maturity, 1.0)
+        # PoC indicators
+        elif src == "github" and any(
+            kw in title for kw in ["poc", "exploit", "proof of concept", "weaponized"]
+        ):
+            score += 0.7
+        elif src == "exploitdb":
+            score += 0.6
 
-    return maturity
+        # Vendor-only / chatter-only
+        else:
+            score += 0.2
+
+    return normalize(score, max_value=len(records))
 
 
-def vendor_confirmed(records: list[ExploitRecord]) -> bool:
+# ---------------------------------------------------------------------------
+# 3️⃣ Updated poc_available (detect GitHub PoCs more accurately)
+# ---------------------------------------------------------------------------
+
+def poc_available(records) -> bool:
+    """
+    True if any record looks like a PoC or exploit.
+    """
+    for r in records:
+        src = r.source.lower()
+        title = r.title.lower()
+        url = r.url.lower()
+
+        # Metasploit or ExploitDB = definitely PoC/exploit
+        if src in {"metasploit", "exploitdb"}:
+            return True
+
+        # GitHub PoC detection
+        if src == "github":
+            if any(kw in title for kw in ["poc", "exploit", "proof of concept", "weaponized"]):
+                return True
+            if any(kw in url for kw in ["poc", "exploit"]):
+                return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# 4️⃣ Updated vendor_confirmed (detect MSRC/Cisco/Oracle advisories)
+# ---------------------------------------------------------------------------
+
+def vendor_confirmed(records) -> bool:
+    """
+    True if any vendor advisory is present.
+    """
     vendor_sources = {
-        "vendor", "msrc", "cisco", "redhat", "ubuntu", "debian", "vmware"
+        "vendor", "msrc", "cisco", "redhat", "ubuntu", "debian",
+        "vmware", "oracle", "adobe", "intel"
     }
-    return any(r.source.lower() in vendor_sources for r in records)
 
+    for r in records:
+        if r.source.lower() in vendor_sources:
+            return True
 
-def poc_available(records: list[ExploitRecord]) -> bool:
-    poc_sources = {"github", "exploitdb", "metasploit"}
-    return any(r.source.lower() in poc_sources for r in records)
+    return False
 
 
 # ---------------------------------------------------------------------------
-# Heat Score (0–100)
+# Heat score (legacy-compatible)
 # ---------------------------------------------------------------------------
 
 def heat_score(
@@ -123,45 +138,45 @@ def heat_score(
     poc_available: bool,
     vendor_confirmed: bool,
     chatter_count: int,
-    latest_published: datetime,
-) -> int:
-
-    latest_published = _safe_datetime(latest_published)
-    score = 0
-
-    score += int(exploit_maturity * 30)
+    latest_published: datetime | None,
+):
+    """
+    Legacy-compatible heat score.
+    You can replace this later with exploitation_maturity_score(),
+    chatter_volume_score(), vendor_presence_score(), recency_activity_score().
+    """
+    base = exploit_maturity
 
     if poc_available:
-        score += 25
-
+        base += 0.15
     if vendor_confirmed:
-        score += 20
-
+        base += 0.15
     if chatter_count > 10:
-        score += 15
+        base += 0.15
     elif chatter_count > 3:
-        score += 10
-    elif chatter_count > 0:
-        score += 5
+        base += 0.08
 
-    days = max(0, (datetime.utcnow() - latest_published).days)
-    if days <= 7:
-        score += 10
-    elif days <= 30:
-        score += 5
+    if latest_published:
+        days = (datetime.utcnow() - latest_published).days
+        if days <= 7:
+            base += 0.15
+        elif days <= 30:
+            base += 0.08
 
-    return min(score, 100)
+    return max(0.0, min(1.0, base))
 
 
 # ---------------------------------------------------------------------------
-# Risk Level (human-friendly severity)
+# Risk level
 # ---------------------------------------------------------------------------
 
-def risk_level(score: int) -> str:
-    if score >= 85:
+def risk_level(score: float) -> str:
+    if score >= 0.8:
         return "Critical"
-    if score >= 60:
+    if score >= 0.6:
         return "High"
-    if score >= 35:
+    if score >= 0.4:
         return "Medium"
-    return "Low"
+    if score >= 0.2:
+        return "Low"
+    return "Informational"
