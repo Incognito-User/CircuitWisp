@@ -428,6 +428,97 @@ async def attack_surface(asset: str, products: list[str], limit: int = 20) -> di
         "total_cves": len(results),
         "top_cves": results[:limit],
     }
+
+# ---------------------------------------------------------------------------
+# /actors/{cve_id} — hardened
+# ---------------------------------------------------------------------------
+
+async def build_actors(cve_id: str) -> dict:
+    """
+    Build a threat actor interest view for a CVE.
+
+    Hardened:
+    - no external actor DB calls yet (placeholder)
+    - bounded actor list
+    - safe text inspection
+    """
+
+    snapshot = await gather_exploits(cve_id)
+    records = snapshot.records
+
+    # Simple heuristic actor extraction from titles/URLs
+    # In production, replace with real actor intel sources.
+    actor_keywords = {
+        "apt28": "APT28",
+        "apt29": "APT29",
+        "lazarus": "Lazarus Group",
+        "fin7": "FIN7",
+        "fin4": "FIN4",
+        "sandworm": "Sandworm",
+        "wizard spider": "Wizard Spider",
+        "clop": "Clop",
+        "lockbit": "LockBit",
+    }
+
+    actors: dict[str, dict] = {}
+
+    for r in records:
+        text = (r.title + " " + r.url).lower()
+
+        for kw, name in actor_keywords.items():
+            if kw in text:
+                entry = actors.get(name, {
+                    "name": name,
+                    "confidence": 0.6,
+                    "sources": [],
+                    "first_seen": r.published,
+                    "last_seen": r.published,
+                })
+
+                entry["sources"].append({
+                    "source": r.source,
+                    "title": r.title,
+                    "url": r.url,
+                    "published": r.published.isoformat(),
+                })
+
+                if r.published < entry["first_seen"]:
+                    entry["first_seen"] = r.published
+                if r.published > entry["last_seen"]:
+                    entry["last_seen"] = r.published
+
+                # Slightly boost confidence with multiple sightings
+                entry["confidence"] = min(1.0, entry["confidence"] + 0.05)
+
+                actors[name] = entry
+
+    # Normalize and bound
+    actor_list = []
+    for a in actors.values():
+        actor_list.append({
+            "name": a["name"],
+            "confidence": round(a["confidence"], 2),
+            "first_seen": a["first_seen"].isoformat(),
+            "last_seen": a["last_seen"].isoformat(),
+            "sources": a["sources"],
+        })
+
+    actor_list.sort(key=lambda x: x["confidence"], reverse=True)
+    actor_list = actor_list[:50]
+
+    interest_level = (
+        "High" if len(actor_list) >= 3 and max(a["confidence"] for a in actor_list) >= 0.8
+        else "Medium" if len(actor_list) >= 1
+        else "Low"
+    )
+
+    return {
+        "cve_id": cve_id,
+        "total_actors": len(actor_list),
+        "interest_level": interest_level,
+        "actors": actor_list,
+    }
+
 # ---------------------------------------------------------------------------
 # /timeline/{cve_id} — hardened
 # ---------------------------------------------------------------------------
