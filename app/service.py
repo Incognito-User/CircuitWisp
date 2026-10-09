@@ -9,6 +9,12 @@ from sources.rss import fetch_rss_chatter, RSS_FEEDS, SOURCE_RELIABILITY, RSS_CA
 
 from app.models import ExploitRecord
 from app.scoring import score_exploit
+from app.scoring import (
+    exploit_maturity,
+    vendor_confirmed,
+    poc_available,
+    heat_score,
+)
 
 
 class ExploitActivitySnapshot:
@@ -140,4 +146,48 @@ async def build_snapshot(cve_id: str) -> dict:
         "sources_used": summary["sources_used"],
         "records": [r.dict() for r in records],
         "summary": summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /heat/{cve_id} endpoint service
+# ---------------------------------------------------------------------------
+
+async def build_heat(cve_id: str) -> dict:
+    """
+    Build a unified heat score for a CVE using exploit maturity,
+    vendor confirmation, PoC availability, chatter volume, and recency.
+    """
+
+    snapshot = await gather_exploits(cve_id)
+    records = snapshot.records
+
+    # Core components
+    maturity = exploit_maturity(records)
+    vendor_conf = vendor_confirmed(records)
+    poc = poc_available(records)
+
+    # Chatter volume (RSS)
+    chatter_count = sum(1 for r in records if r.source.lower() == "rss")
+
+    # Recency
+    latest_published = max((r.published for r in records), default=None)
+
+    # Final heat score
+    score = heat_score(
+        exploit_maturity=maturity,
+        poc_available=poc,
+        vendor_confirmed=vendor_conf,
+        chatter_count=chatter_count,
+        latest_published=latest_published,
+    )
+
+    return {
+        "cve_id": cve_id,
+        "heat_score": score,
+        "exploit_maturity": maturity,
+        "poc_available": poc,
+        "vendor_confirmed": vendor_conf,
+        "chatter_count": chatter_count,
+        "latest_published": latest_published.isoformat() if latest_published else None,
     }
