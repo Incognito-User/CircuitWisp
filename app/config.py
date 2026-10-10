@@ -1,12 +1,24 @@
-from pydantic_settings import BaseSettings
+# app/config.py
+import os
 
-class Settings(BaseSettings):
-    exploitdb_api_key: str | None = None
-    github_token: str | None = None
-    log_level: str = "INFO"
-    request_timeout: int = 10
+# Load environment variables
+SHODAN_API_KEY = os.getenv("SHODAN_API_KEY")
+GREYNOISE_API_KEY = os.getenv("GREYNOISE_API_KEY")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-    class Config:
-        env_file = ".env"
+# Optional future integrations
+VULNERS_API_KEY = os.getenv("VULNERS_API_KEY")
 
-settings = Settings()
+def config_status():
+    return {
+        "shodan": "configured" if SHODAN_API_KEY else "missing",
+        "greynoise": "configured" if GREYNOISE_API_KEY else "missing",
+        "github": "configured" if GITHUB_TOKEN else "missing",
+        "epss": "public",
+        "kev": "public",
+        "nvd": "public",
+        "exploitdb": "public",
+        "metasploit": "public",
+        "vendor": "public",
+        "rss": "public",
+    }
