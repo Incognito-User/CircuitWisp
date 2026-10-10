@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------------------
 # Normalization helper
@@ -8,6 +8,45 @@ def normalize(value, max_value):
     if max_value == 0:
         return 0.0
     return max(0.0, min(1.0, value / max_value))
+
+
+class latest_published:
+    """
+    Utility wrapper for handling the newest publication timestamp in a record set.
+
+    This class normalizes timestamps to UTC, computes age in days, and exposes
+    a simple recency bonus suitable for the heat-score heuristics used here.
+    """
+
+    def __init__(self, value: datetime | None):
+        self.value = value
+
+    def as_utc(self) -> datetime | None:
+        if self.value is None:
+            return None
+        if self.value.tzinfo is None:
+            return self.value.replace(tzinfo=timezone.utc)
+        return self.value.astimezone(timezone.utc)
+
+    def age_days(self) -> int:
+        dt = self.as_utc()
+        if dt is None:
+            return 999999
+        return (datetime.now(timezone.utc) - dt).days
+
+    def recency_bonus(self) -> float:
+        age = self.age_days()
+        if age <= 7:
+            return 0.15
+        if age <= 30:
+            return 0.08
+        return 0.0
+
+    def __bool__(self) -> bool:
+        return self.value is not None
+
+    def __float__(self) -> float:
+        return self.recency_bonus()
 
 
 # ---------------------------------------------------------------------------
@@ -156,12 +195,9 @@ def heat_score(
     elif chatter_count > 3:
         base += 0.08
 
-    if latest_published:
-        days = (datetime.utcnow() - latest_published).days
-        if days <= 7:
-            base += 0.15
-        elif days <= 30:
-            base += 0.08
+    if latest_published is not None:
+        latest_pub = globals()["latest_published"](latest_published)
+        base += latest_pub.recency_bonus()
 
     return max(0.0, min(1.0, base))
 
