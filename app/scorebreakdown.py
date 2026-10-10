@@ -1,6 +1,5 @@
 # app/scorebreakdown.py
 
-from app.scoring import calculate_heat_score
 from app.service import build_snapshot
 from app.utils.logging import log_source_error
 
