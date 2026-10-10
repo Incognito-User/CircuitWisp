@@ -1,109 +1,78 @@
 import httpx
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List
-
 from app.models import ExploitRecord
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-MSRC_API = "https://api.msrc.microsoft.com/cvrf/v2.0/cve/"
-CISCO_SEARCH = "https://sec.cloudapps.cisco.com/security/center/search.x"
-
-
-def _safe_parse_timestamp(ts: str | None) -> datetime:
-    if not ts:
-        return datetime.now(timezone.utc)
-    try:
-        ts = ts.replace("Z", "+00:00")
-        parsed = datetime.fromisoformat(ts)
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except Exception:
-        return datetime.now(timezone.utc)
-
-
-def _safe_reliability_vendor(vendor: str) -> float:
-    v = vendor.lower()
-    if v in {"msrc", "microsoft"}:
-        return 0.95
-    if v in {"cisco", "oracle", "vmware", "redhat"}:
-        return 0.9
-    return 0.8
-
-
-async def _fetch_msrc(client: httpx.AsyncClient, cve_id: str) -> List[ExploitRecord]:
-    headers = {"Accept": "application/json"}
-    if settings.github_token:
-        headers["Authorization"] = f"Bearer {settings.github_token}"
-
-    url = MSRC_API + cve_id
-
-    try:
-        resp = await client.get(url, headers=headers)
-        resp.raise_for_status()
-    except Exception as exc:
-        # FIXED LOGGING
-        logger.warning(f"MSRC advisory fetch failed for {url}: {exc}")
-        return []
-
-    try:
-        data = resp.json()
-    except Exception as exc:
-        logger.warning(f"MSRC returned non-JSON for {url}: {exc}")
-        return []
-
-    title = data.get("DocumentTitle", f"MSRC advisory for {cve_id}")
-    published = data.get("DocumentTracking", {}).get("InitialReleaseDate")
-
-    record = ExploitRecord(
-        source="msrc",
-        cve_id=cve_id,
-        title=title,
-        url=url,
-        published=_safe_parse_timestamp(published),
-        reliability=_safe_reliability_vendor("msrc"),
-    )
-
-    return [record]
-
-
-async def _fetch_cisco(client: httpx.AsyncClient, cve_id: str) -> List[ExploitRecord]:
-    params = {"keyword": cve_id}
-    url = CISCO_SEARCH
-
-    try:
-        resp = await client.get(url, params=params)
-        resp.raise_for_status()
-    except Exception as exc:
-        # FIXED LOGGING
-        logger.warning(f"Cisco advisory fetch failed for {url}: {exc}")
-        return []
-
-    # Cisco returns HTML; presence = confirmation
-    record = ExploitRecord(
-        source="cisco",
-        cve_id=cve_id,
-        title=f"Cisco advisory search for {cve_id}",
-        url=f"{url}?keyword={cve_id}",
-        published=datetime.now(timezone.utc),
-        reliability=_safe_reliability_vendor("cisco"),
-    )
-
-    return [record]
+MSRC_URL = "https://api.msrc.microsoft.com/cvrf/v2.0/cve/"
+CISCO_URL = "https://sec.cloudapps.cisco.com/security/center/search.x"
+DEBIAN_RSS = "https://www.debian.org/security/dsa.atom"
 
 
 async def fetch_vendor_advisories(cve_id: str) -> List[ExploitRecord]:
-    results: List[ExploitRecord] = []
+    """
+    Fetch vendor advisories (MSRC, Cisco, Debian, etc.) for a CVE.
+    Returns a list of ExploitRecord objects tagged as vendor sources.
+    """
 
-    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-        msrc = await _fetch_msrc(client, cve_id)
-        cisco = await _fetch_cisco(client, cve_id)
+    records: List[ExploitRecord] = []
 
-        results.extend(msrc)
-        results.extend(cisco)
+    # MSRC
+    msrc_url = f"{MSRC_URL}{cve_id}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(msrc_url)
+            resp.raise_for_status()
+        records.append(
+            ExploitRecord(
+                source="msrc",
+                cve_id=cve_id,
+                title=f"MSRC advisory for {cve_id}",
+                url=msrc_url,
+                published=datetime.utcnow(),
+                reliability=0.8,
+            )
+        )
+    except Exception as exc:
+        logger.warning(f"MSRC advisory fetch failed for {cve_id}: {exc}")
 
-    logger.info(f"Vendor advisories fetched for {cve_id}: {len(results)} records")
-    return results
+    # Cisco
+    cisco_params = {"keyword": cve_id}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(CISCO_URL, params=cisco_params)
+            resp.raise_for_status()
+        records.append(
+            ExploitRecord(
+                source="cisco",
+                cve_id=cve_id,
+                title=f"Cisco advisory search for {cve_id}",
+                url=f"{CISCO_URL}?keyword={cve_id}",
+                published=datetime.utcnow(),
+                reliability=0.8,
+            )
+        )
+    except Exception as exc:
+        logger.warning(f"Cisco advisory fetch failed for {cve_id}: {exc}")
+
+    # Debian RSS (generic)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(DEBIAN_RSS)
+            resp.raise_for_status()
+        records.append(
+            ExploitRecord(
+                source="debian",
+                cve_id=cve_id,
+                title="Debian security RSS feed",
+                url=DEBIAN_RSS,
+                published=datetime.utcnow(),
+                reliability=0.7,
+            )
+        )
+    except Exception as exc:
+        logger.warning(f"Debian RSS fetch failed for {cve_id}: {exc}")
+
+    return records
