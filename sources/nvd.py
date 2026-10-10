@@ -1,99 +1,48 @@
 import httpx
 import logging
-from typing import Dict, Any, Optional
-
-from app.config import settings
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-NVD_API = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+NVD_URL = "https://services.nvd.nist.gov/rest/json/cve/2.0/"
 
 
 async def fetch_nvd(cve_id: str) -> Dict[str, Any]:
     """
-    Fetch NVD CVE details (CVSS, CWE, etc.).
-
-    Returns:
-        {
-            "cve": str,
-            "cvss_v3": float | None,
-            "cvss_v2": float | None,
-            "cwe": str | None,
-            "description": str | None,
-        }
+    Fetch NVD data for a CVE.
+    Returns a dict with keys like: description, cvss_v3, etc.
     """
-    params = {"cveId": cve_id}
 
-    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-        try:
-            resp = await client.get(NVD_API, params=params)
+    url = f"{NVD_URL}{cve_id}"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
             resp.raise_for_status()
-        except Exception as exc:
-            logger.warning(f"NVD fetch failed for {cve_id}: {exc}")
-            return {
-                "cve": cve_id,
-                "cvss_v3": None,
-                "cvss_v2": None,
-                "cwe": None,
-                "description": None,
-            }
-
-        try:
             data = resp.json()
-        except Exception as exc:
-            logger.warning(f"NVD returned non-JSON for {cve_id}: {exc}")
-            return {
-                "cve": cve_id,
-                "cvss_v3": None,
-                "cvss_v2": None,
-                "cwe": None,
-                "description": None,
-            }
+    except Exception as exc:
+        logger.warning(f"NVD fetch failed for {cve_id}: {exc}")
+        return {}
 
-    vulns = data.get("vulnerabilities", [])
+    vulns = data.get("vulnerabilities") or []
     if not vulns:
-        return {
-            "cve": cve_id,
-            "cvss_v3": None,
-            "cvss_v2": None,
-            "cwe": None,
-            "description": None,
-        }
+        return {}
 
-    v = vulns[0].get("cve", {})
-    metrics = vulns[0].get("cve", {}).get("metrics", {})
+    v = vulns[0]
+    cve = v.get("cve", {})
+    descriptions = cve.get("descriptions") or []
+    desc = descriptions[0]["value"] if descriptions else ""
 
-    cvss_v3 = None
-    cvss_v2 = None
+    metrics = v.get("cve", {}).get("metrics", {})
+    cvss_v3 = 0.0
 
-    # CVSS v3
-    v3_list = metrics.get("cvssMetricV31") or metrics.get("cvssMetricV30") or []
-    if v3_list:
-        cvss_v3 = v3_list[0].get("cvssData", {}).get("baseScore")
-
-    # CVSS v2
-    v2_list = metrics.get("cvssMetricV2") or []
-    if v2_list:
-        cvss_v2 = v2_list[0].get("cvssData", {}).get("baseScore")
-
-    # CWE
-    cwe = None
-    problem_types = v.get("weaknesses", [])
-    if problem_types:
-        descs = problem_types[0].get("description", [])
-        if descs:
-            cwe = descs[0].get("value")
-
-    # Description
-    description = None
-    descs = v.get("descriptions", [])
-    if descs:
-        description = descs[0].get("value")
+    for key, val in metrics.items():
+        if isinstance(val, list) and val:
+            metric = val[0]
+            cvss_v3 = float(metric.get("cvssData", {}).get("baseScore", 0.0))
+            break
 
     return {
-        "cve": cve_id,
+        "description": desc,
         "cvss_v3": cvss_v3,
-        "cvss_v2": cvss_v2,
-        "cwe": cwe,
-        "description": description,
     }
