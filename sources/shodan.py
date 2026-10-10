@@ -1,58 +1,39 @@
+import os
 import httpx
 import logging
 from typing import Dict, Any
 
-from app.config import settings
-
 logger = logging.getLogger(__name__)
 
-SHODAN_SEARCH_API = "https://api.shodan.io/shodan/host/search"
+SHODAN_URL = "https://api.shodan.io/shodan/host/search"
 
 
 async def fetch_shodan(cve_id: str) -> Dict[str, Any]:
     """
-    Fetch Shodan exposure data for a CVE.
-
-    Returns:
-        {
-            "cve": str,
-            "exposure_count": int | None,
-        }
+    Fetch Shodan exposure for a CVE (via search query).
+    Returns a dict: {"exposure_count": int, ...}
     """
-    if not getattr(settings, "shodan_token", None):
-        logger.warning("Shodan token not configured; skipping Shodan fetch")
-        return {
-            "cve": cve_id,
-            "exposure_count": None,
-        }
+
+    api_key = os.getenv("SHODAN_API_KEY")
+    if not api_key:
+        logger.info("Shodan token not configured; skipping Shodan fetch")
+        return {}
 
     params = {
+        "key": api_key,
         "query": cve_id,
-        "key": settings.shodan_token,
     }
 
-    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-        try:
-            resp = await client.get(SHODAN_SEARCH_API, params=params)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(SHODAN_URL, params=params)
             resp.raise_for_status()
-        except Exception as exc:
-            logger.warning(f"Shodan fetch failed for {cve_id}: {exc}")
-            return {
-                "cve": cve_id,
-                "exposure_count": None,
-            }
-
-        try:
             data = resp.json()
-        except Exception as exc:
-            logger.warning(f"Shodan returned non-JSON for {cve_id}: {exc}")
-            return {
-                "cve": cve_id,
-                "exposure_count": None,
-            }
+    except Exception as exc:
+        logger.warning(f"Shodan fetch failed for {cve_id}: {exc}")
+        return {}
 
-    total = data.get("total")
+    matches = data.get("matches") or []
     return {
-        "cve": cve_id,
-        "exposure_count": total,
+        "exposure_count": len(matches),
     }
