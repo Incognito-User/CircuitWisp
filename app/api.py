@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from .config import config_status
 from .service import build_snapshot, build_timeline
+from .health import health_sources
 
 
 class Router(APIRouter):
@@ -33,23 +34,29 @@ class Router(APIRouter):
             tags=["timeline"]
         )
 
+        # Health endpoint
+        self.add_api_route(
+            "/health/sources",
+            self.get_health_sources,
+            methods=["GET"],
+            tags=["health"]
+        )
+
     async def get_config_status(self):
-        """
-        Returns configuration status, including which API keys are loaded.
-        """
+        """Returns configuration status, including which API keys are loaded."""
         return config_status()
 
     async def get_cve_snapshot(self, cve_id: str):
-        """
-        Returns the full CircuitWisp snapshot for a given CVE.
-        """
+        """Returns the full CircuitWisp snapshot for a given CVE."""
         return await build_snapshot(cve_id)
 
     async def get_cve_timeline(self, cve_id: str):
-        """
-        Returns the timeline of events for a given CVE.
-        """
+        """Returns the timeline of events for a given CVE."""
         return await build_timeline(cve_id)
+
+    async def get_health_sources(self):
+        """Returns real-time health status for all intel sources."""
+        return await health_sources()
 
 
 # Export router instance for main.py
