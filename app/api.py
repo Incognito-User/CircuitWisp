@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from .config import config_status
 from .service import build_snapshot, build_timeline
 from .health import health_sources
-
+from .scorebreakdown import score_breakdown
 
 class Router(APIRouter):
     def __init__(self):
@@ -41,6 +41,14 @@ class Router(APIRouter):
             methods=["GET"],
             tags=["health"]
         )
+        
+        # Score breakdown endpoint
+        self.add_api_route(
+            "/scorebreakdown/{cve_id}",
+            self.get_score_breakdown,
+            methods=["GET"],
+            tags=["score"]
+        )
 
     async def get_config_status(self):
         """Returns configuration status, including which API keys are loaded."""
@@ -58,6 +66,9 @@ class Router(APIRouter):
         """Returns real-time health status for all intel sources."""
         return await health_sources()
 
+    async def get_score_breakdown(self, cve_id: str):
+        """Returns a transparent, OWASP‑aligned breakdown of how the heat score was calculated."""
+        return await score_breakdown(cve_id)
 
 # Export router instance for main.py
 router = Router()
