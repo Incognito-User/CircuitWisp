@@ -105,9 +105,9 @@ class Router(APIRouter):
         """Returns threat actor associations for a given CVE."""
         return await get_actor_mapping(cve_id)
 
-    async def search(self, query: str):
-        """Searches across known CVEs."""
-        return await search_intel(query)
+    async def search(self, q: str):
+        """Searches across known CVEs and returns relevant snapshots."""
+        return await search_intel(q)
 
 # Export router instance for main.py
 router = Router()
