@@ -4,6 +4,30 @@ CircuitWisp is a secure, modular cyber‑threat intelligence engine designed for
 CircuitWisp is built to be small, fast, and extensible — a quiet little wisp in the wires watching the threat landscape.
 
 ---
+### 🪶 Project Badges
+
+<!-- Project Identity -->
+![CircuitWisp](https://img.shields.io/badge/CircuitWisp-🌙_CyberGhibli-6f42c1.svg)
+
+<!-- Core Metadata -->
+![Python](https://img.shields.io/badge/Python-3.11-blue.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+![Status](https://img.shields.io/badge/Status-Active-success.svg)
+
+<!-- Private Repo Indicators -->
+![Last Commit](https://img.shields.io/badge/Last_Commit-Private_Repo-lightgrey.svg)
+![Issues](https://img.shields.io/badge/Issues-Private_Repo-lightgrey.svg)
+
+<!-- Intelligence Integrations -->
+![EPSS](https://img.shields.io/badge/EPSS-Integrated-orange.svg)
+![KEV](https://img.shields.io/badge/KEV-Integrated-red.svg)
+![Exploit Sources](https://img.shields.io/badge/ExploitDB%20%2B%20Metasploit-Enabled-purple.svg)
+
+<!-- Architecture -->
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-teal.svg)
+![OWASP](https://img.shields.io/badge/OWASP-Aligned-blueviolet.svg)
+
+---
 
 ## ✨ Features
 - **FastAPI‑powered CTI endpoints**  
