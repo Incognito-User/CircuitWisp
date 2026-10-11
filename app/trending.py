@@ -1,80 +1,86 @@
-# app/trending.py
+# app/api.py
 
-from datetime import datetime
-from app.service import build_snapshot
-from app.utils.logging import log_source_error
-
-# CVEs you want to monitor daily (expand later or auto-populate)
-WATCHLIST = [
-    "CVE-2021-44228",
-    "CVE-2020-1472",
-    "CVE-2019-0708",
-    "CVE-2017-0144",
-    "CVE-2023-34362"
-]
+from fastapi import APIRouter
+from .config import config_status
+from .service import build_snapshot, build_timeline
+from .health import health_sources
+from .scorebreakdown import score_breakdown
+from app.trending import compute_trending
 
 
-async def compute_trending():
-    """
-    Stateless trending module.
-    Computes 'movement' based on current snapshot values.
-    Later, you can add persistence for true deltas.
-    """
+class Router(APIRouter):
+    def __init__(self):
+        super().__init__()
 
-    results = []
-
-    for cve_id in WATCHLIST:
-        try:
-            snapshot = await build_snapshot(cve_id)
-        except Exception as exc:
-            log_source_error("trending", cve_id, exc)
-            continue
-
-        # Extract components
-        epss = snapshot.get("epss", {})
-        exploits = snapshot.get("exploits", [])
-        kev = snapshot.get("kev")
-        heat = snapshot.get("heat", 0)
-
-        # Heuristic deltas (stateless version)
-        epss_delta = epss.get("percentile", 0)
-        exploit_delta = len(exploits)
-        kev_change = kev is not None
-
-        # Simple trending score
-        trending_score = (
-            (epss_delta * 0.5) +
-            (exploit_delta * 0.3) +
-            (1 if kev_change else 0) * 0.2
+        # Config endpoint
+        self.add_api_route(
+            "/config",
+            self.get_config_status,
+            methods=["GET"],
+            tags=["config"]
         )
 
-        results.append({
-            "cve_id": cve_id,
-            "heat": heat,
-            "epss_delta": epss_delta,
-            "exploit_delta": exploit_delta,
-            "kev_change": kev_change,
-            "trending_score": trending_score,
-            "reason": build_reason(epss_delta, exploit_delta, kev_change)
-        })
+        # CVE snapshot endpoint
+        self.add_api_route(
+            "/cve/{cve_id}",
+            self.get_cve_snapshot,
+            methods=["GET"],
+            tags=["cve"]
+        )
 
-    # Sort by trending score
-    results.sort(key=lambda x: x["trending_score"], reverse=True)
+        # CVE timeline endpoint
+        self.add_api_route(
+            "/timeline/{cve_id}",
+            self.get_cve_timeline,
+            methods=["GET"],
+            tags=["timeline"]
+        )
 
-    return {
-        "date": datetime.utcnow().strftime("%Y-%m-%d"),
-        "top_trending": results
-    }
+        # Health endpoint
+        self.add_api_route(
+            "/health/sources",
+            self.get_health_sources,
+            methods=["GET"],
+            tags=["health"]
+        )
+        
+        # Score breakdown endpoint
+        self.add_api_route(
+            "/scorebreakdown/{cve_id}",
+            self.get_score_breakdown,
+            methods=["GET"],
+            tags=["score"]
+        )
+        self.add_api_route(
+            "/trending",
+            self.get_trending,
+            methods=["GET"],
+            tags=["intel"]
+        )
 
+    async def get_config_status(self):
+        """Returns configuration status, including which API keys are loaded."""
+        return config_status()
 
-def build_reason(epss_delta, exploit_delta, kev_change):
-    reasons = []
-    if epss_delta > 0.5:
-        reasons.append("EPSS spike")
-    if exploit_delta > 0:
-        reasons.append("new exploit")
-    if kev_change:
-        reasons.append("KEV activity")
-    if not reasons:
-        reasons.append("stable")
-    return reasons
+    async def get_cve_snapshot(self, cve_id: str):
+        """Returns the full CircuitWisp snapshot for a given CVE."""
+        return await build_snapshot(cve_id)
+
+    async def get_cve_timeline(self, cve_id: str):
+        """Returns the timeline of events for a given CVE."""
+        return await build_timeline(cve_id)
+
+    async def get_health_sources(self):
+        """Returns real-time health status for all intel sources."""
+        return await health_sources()
+
+    async def get_score_breakdown(self, cve_id: str):
+        """Returns a transparent, OWASP‑aligned breakdown of how the heat score was calculated."""
+        return await score_breakdown(cve_id)
+
+    async def get_trending(self):
+        """Returns daily trending CVEs based on EPSS, KEV, and exploit activity."""
+        return await compute_trending()
+
+# Export router instance for main.py
+router = Router()
