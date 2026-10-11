@@ -1,10 +1,17 @@
-## 🌙 CircuitWisp
+<p align="center">
+  <img src="assets/logo/CircuitWisp-Logo.png" alt="CircuitWisp Logo" width="300">
+</p>
+
+<h1 align="center">🌙 CircuitWisp</h1>
+
+<p align="center"><i>A quiet little wisp in the wires watching the threat landscape.</i></p>
+
+## 🌙 Description
 CircuitWisp is a secure, modular cyber‑threat intelligence engine designed for modern CTI, vulnerability management, and exploitation‑signal monitoring workflows. It aggregates intelligence from multiple sources, builds structured CVE snapshots, computes deterministic heat scores, and exposes a clean FastAPI interface for analysts, automation pipelines, and dashboards.
 
 CircuitWisp is built to be small, fast, and extensible — a quiet little wisp in the wires watching the threat landscape.
 
 ---
-### 🪶 Project Badges
 
 <!-- Project Identity -->
 ![CircuitWisp](https://img.shields.io/badge/CircuitWisp-🌙_CyberGhibli-6f42c1.svg)
