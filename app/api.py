@@ -5,6 +5,9 @@ from .config import config_status
 from .service import build_snapshot, build_timeline
 from .health import health_sources
 from .scorebreakdown import score_breakdown
+from app.trending import compute_trending
+from app.actors import get_actor_mapping
+from app.search import search_intel
 
 class Router(APIRouter):
     def __init__(self):
@@ -49,6 +52,30 @@ class Router(APIRouter):
             methods=["GET"],
             tags=["score"]
         )
+        
+        # Trending endpoint
+        self.add_api_route(
+            "/trending",
+            self.get_trending,
+            methods=["GET"],
+            tags=["intel"]
+        )
+
+        # Actors endpoint
+        self.add_api_route(
+            "/actors/{cve_id}",
+            self.get_actors,
+            methods=["GET"],
+            tags=["intel"]
+        )
+
+        # Search endpoint
+        self.add_api_route(
+            "/search",
+            self.search,
+            methods=["GET"],
+            tags=["intel"]
+        )
 
     async def get_config_status(self):
         """Returns configuration status, including which API keys are loaded."""
@@ -69,6 +96,18 @@ class Router(APIRouter):
     async def get_score_breakdown(self, cve_id: str):
         """Returns a transparent, OWASP‑aligned breakdown of how the heat score was calculated."""
         return await score_breakdown(cve_id)
+
+    async def get_trending(self):
+        """Returns daily trending CVEs based on EPSS, KEV, and exploit activity."""
+        return await compute_trending()
+
+    async def get_actors(self, cve_id: str):
+        """Returns threat actor associations for a given CVE."""
+        return await get_actor_mapping(cve_id)
+
+    async def search(self, query: str):
+        """Searches across known CVEs."""
+        return await search_intel(query)
 
 # Export router instance for main.py
 router = Router()
