@@ -1,36 +1,53 @@
-# 🌙 CircuitWisp
+## 🌙 CircuitWisp
+CircuitWisp is a secure, modular cyber‑threat intelligence engine designed for modern CTI, vulnerability management, and exploitation‑signal monitoring workflows. It aggregates intelligence from multiple sources, builds structured CVE snapshots, computes deterministic heat scores, and exposes a clean FastAPI interface for analysts, automation pipelines, and dashboards.
 
-CircuitWisp is a secure, modular exploit‑activity monitoring engine built for modern CTI and vulnerability intelligence workflows. It tracks PoCs and exploit signals across multiple sources using an OWASP‑aligned Python architecture — a small “wisp in the wires” watching the threat landscape.
+CircuitWisp is built to be small, fast, and extensible — a quiet little wisp in the wires watching the threat landscape.
 
 ---
 
 ## ✨ Features
+- **FastAPI‑powered CTI endpoints**  
+`/cve`, `/timeline`, `/scorebreakdown`, `/trending`, `/actors`, `/search`, `/health/sources`, `/config`
 
-- Async monitoring of exploit sources (ExploitDB, GitHub, more coming)
-- Strict input validation using Pydantic models
-- Secure external API clients with safe request handling
-- Deterministic exploit scoring and correlation logic
-- Dashboard‑ready JSON output for analyst and management views
-- Modular structure designed for future CTI/VM expansion
+- **Deterministic exploit‑activity scoring**  
+EPSS, KEV, exploit metadata, and reliability weighting
+
+- **Modular intelligence ingestion**  
+ExploitDB, Metasploit, GitHub PoCs, KEV, EPSS, NVD (more coming)
+
+- **Structured CVE snapshots**  
+Unified JSON output for dashboards, SIEM enrichment, and analyst workflows
+
+- **Static intelligence modules (Phase 1)**  
+Trending, Actors, Search — validated and ready for dynamic expansion
+
+- **OWASP‑aligned architecture**  
+Safe request handling, strict Pydantic validation, and clean separation of concerns
+
+- **Future‑ready design**  
+Built for expansion into dynamic intel feeds, asset context, and SaaS abuse detection
 
 ---
 
 ## 📦 Installation
-
-```bash
+```Bash
 git clone https://github.com/Incognito-User/CircuitWisp.git
 cd CircuitWisp
 pip install -r requirements.txt
 ```
 
+---
+
 ## 🔐 Environment Setup
 Copy the example environment file:
-```bash
+```Bash
 cp .env.example .env
 ```
-Then add your API keys and configuration vlaues.
+Then add your API keys and configuration values.
 
-##  🚀 Usage Example
+---
+
+## 🚀 Usage Example
 ```python
 import asyncio
 from app.service import monitor_exploitation
@@ -38,35 +55,62 @@ from app.service import monitor_exploitation
 results = asyncio.run(monitor_exploitation(["CVE-2024-12345"]))
 print(results)
 ```
+
+---
+
 ## 🧩 Project Structure
 ```
-circuitwisp/
+CircuitWisp/
 ├─ app/
-│  ├─ config.py          # Secure config + secrets loading
-│  ├─ models.py          # Input validation + schemas
-│  ├─ scoring.py         # Exploit scoring logic
-│  ├─ service.py         # Orchestrator
-│  ├─ sources/           # External exploit-source clients
+│  ├─ api.py              # FastAPI router + endpoint definitions
+│  ├─ config.py           # Secure config + secrets loading
+│  ├─ models.py           # Pydantic schemas
+│  ├─ scoring.py          # Heat score + risk logic
+│  ├─ service.py          # Snapshot + timeline orchestrator
+│  ├─ health.py           # Source availability checks
+│  ├─ scorebreakdown.py   # Transparent scoring explanation
+│  ├─ trending.py         # Static trending module (Phase 1)
+│  ├─ actors.py           # Static actor mapping (Phase 1)
+│  ├─ search.py           # Static search index (Phase 1)
+│  ├─ sources/            # External intel clients
 │  │   ├─ exploitdb.py
+│  │   ├─ metasploit.py
 │  │   ├─ github.py
-│  └─ api.py             # (future) FastAPI dashboard API
+│  │   └─ ...
+├─ docs/
+│  └─ validation/
+│      └─ Phase1_Endpoint_Validation/   # Screenshot validation artifacts
 ├─ tests/
 ├─ .env.example
 ├─ .gitignore
 └─ README.md
 ```
 
+---
+
 ## 📅 Roadmap
-- Add Metasploit + vendor advisory integrations
-- Add Asset Context Vault (sanitized exposure flags)
-- Add FastAPI dashboard API
-- Add Analyst + Management dashboards
-- Add SaaS workflow abuse detection module
-- Add Docker deployment + CI/CD
+**Phase 2 — Dynamic Intelligence**
+- Dynamic Trending (EPSS deltas, KEV changes, exploit activity)
+- Dynamic Actor Enrichment (ATT&CK, campaigns, tooling)
+- Dynamic Search (KEV, NVD, EPSS, vendor advisories, exploit metadata)
+
+**Phase 3 — Dashboard + Context**
+- FastAPI dashboard API
+- Analyst + management dashboards
+- Asset Context Vault (sanitized exposure flags)
+- SaaS workflow abuse detection module
+
+**Phase 4 — Deployment**
+- Docker deployment
+- CI/CD pipeline
+- Production hardening
+
+---
 
 ## ⚖️ License
+CircuitWisp is released under the MIT License, a simple and permissive open‑source license that allows others to use, modify, and distribute the project with proper attribution. This keeps the project accessible for researchers, defenders, and CTI teams while maintaining flexibility for future development and integration.
 
-CircuitWisp is released under the **MIT License**, a simple and permissive open‑source license that allows others to use, modify, and distribute the project with proper attribution. This keeps the project accessible for researchers, defenders, and CTI teams while maintaining flexibility for future development and integration.
+---
 
 ## 🌌 About the Name
 CircuitWisp blends cyberpunk circuitry with Ghibli‑style spirit imagery — a tiny digital wisp quietly watching the grid for emerging threats.
