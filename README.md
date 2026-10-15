@@ -326,44 +326,11 @@ results = asyncio.run(monitor_exploitation(["CVE-2024-12345"]))
 print(results)
 ```
 
-# 📅 Roadmap
-**Phase 1 — Core CTI Engine (Completed)**
-- EPSS, KEV, NVD ingestion
-- ExploitDB + Metasploit
-- GitHub PoCs
-- GreyNoise
-- Shodan global exposure
-- Snapshot builder
-- SREI scoring
-- Static trending, actors, search
+## 📅 Roadmap
 
-**Phase 2 — Dynamic Intelligence (In Progress)**
-- EPSS deltas
-- KEV changes
-- exploit activity trends
-- dynamic actor enrichment
-- dynamic search expansion
+For the full development roadmap, see:
 
-**Phase 3 — Dashboard + Context (In Development)**
-- FastAPI dashboard API
-- Analyst dashboards
-- Management dashboards
-- Global vs. local exposure views
-- Asset context vault (sanitized)
-- EASM integration (runtime-loaded)
-
-**Phase 4 — Deployment**
-- Docker deployment
-- CI/CD pipeline
-- Production hardening
-- Secure runtime configuration
-
-**Phase 5 — Full EASM Integration**
-- External exposure detection
-- Misconfiguration detection
-- EASM-aware SREI scoring
-- External asset deltas
-- Exposure timeline
+➡️ [RoadMap.md](RoadMap.md)
 
 # ⚖️ License
 CircuitWisp is released under the MIT License — simple, permissive, and defender-friendly.
