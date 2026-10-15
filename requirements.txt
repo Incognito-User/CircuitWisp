@@ -16,4 +16,3 @@ lxml
 anyio
 pyyaml
 typing-extensions
-beautifulsoup4
