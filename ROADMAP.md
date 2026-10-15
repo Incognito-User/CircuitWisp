@@ -78,4 +78,3 @@ This roadmap outlines the planned development phases for CircuitWisp — a modul
 
 This roadmap is a living document and will evolve as CircuitWisp grows.  
 Major changes will be reflected here and in the project’s milestones.
-
