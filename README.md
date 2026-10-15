@@ -22,21 +22,21 @@ It has since evolved into a **full-spectrum CTI + Exposure Intelligence platform
 
 CircuitWisp is built to be small, fast, and extensible — a quiet little wisp in the wires watching the grid for emerging threats.
 
----
-
 # 🛡️ Project Identity
 
-![CircuitWisp](https://img.shields.io/badge/CircuitWisp-🌙_CyberGhibli-6f42c1.svg)
-![Python](https://img.shields.io/badge/Python-3.11-blue.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-Active-success.svg)
-
-![EPSS](https://img.shields.io/badge/EPSS-Integrated-orange.svg)
-![KEV](https://img.shields.io/badge/KEV-Integrated-red.svg)
-![Exploit Sources](https://img.shields.io/badge/ExploitDB%20%2B%20Metasploit-Enabled-purple.svg)
-
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-teal.svg)
-![OWASP](https://img.shields.io/badge/OWASP-Aligned-blueviolet.svg)
+<p align="center">
+  <img src="https://img.shields.io/badge/CircuitWisp-🌙_CyberGhibli-6f42c1.svg" />
+  <img src="https://img.shields.io/badge/Python-3.11-blue.svg" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" />
+  <img src="https://img.shields.io/badge/Status-Active-success.svg" />
+  <br>
+  <img src="https://img.shields.io/badge/EPSS-Integrated-orange.svg" />
+  <img src="https://img.shields.io/badge/KEV-Integrated-red.svg" />
+  <img src="https://img.shields.io/badge/ExploitDB%20%2B%20Metasploit-Enabled-purple.svg" />
+  <br>
+  <img src="https://img.shields.io/badge/FastAPI-Backend-teal.svg" />
+  <img src="https://img.shields.io/badge/OWASP-Aligned-blueviolet.svg" />
+</p>
 
 ---
 
