@@ -74,7 +74,7 @@ The snapshot builder (heat.py) merges all intelligence sources into a single str
 Status: **Complete**
 Next Steps: Add optional enrichment flags for dashboard rendering
 
-_✔ Phase 3 — Deterministic Exploitation Scoring (Completed)
+_✔ Phase 3 — Deterministic Exploitation Scoring (Completed)_
 The SREI scoring engine (srei.py + scoring.py) computes a transparent, explainable exploitation score using:
 
 - **EPSS probability**
@@ -88,7 +88,7 @@ The SREI scoring engine (srei.py + scoring.py) computes a transparent, explainab
 Status: **Complete**
 Next Steps: Add weighting profiles for different sectors
 
-_✔ Phase 4 — FastAPI Backend (Completed)
+_✔ Phase 4 — FastAPI Backend (Completed)_
 Implemented endpoints:
 
 - /cve
@@ -115,7 +115,7 @@ These modules provide baseline functionality for dashboard and API consumption.
 Status: **Phase 1 Complete**
 Next Steps: Add scoring‑weighted trending + actor clustering
 
-_🔄 Phase 6 — External Attack Surface Module (In Progress)
+_🔄 Phase 6 — External Attack Surface Module (In Progress)_
 The EASM module (easm.py) is staged and partially implemented.
 
 Planned capabilities:
