@@ -17,13 +17,17 @@ def ensure_aware(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 from app.models import ExploitRecord
-from app.scoring import (
+
+# Scoring + SREI + Tech Stack
+from app.utils.scoring import (
     exploit_maturity,
     poc_available,
     vendor_confirmed,
     heat_score,
     risk_level,
 )
+from app.utils.srei import compute_srei
+from app.utils.techstack import load_tech_stack
 
 # Exploit + PoC + Vendor + RSS
 from app.sources.exploitdb import fetch_exploitdb
@@ -43,9 +47,8 @@ from app.sources.shodan import fetch_shodan
 from app.sources.mitre import fetch_mitre_intrusion_sets
 from app.sources.cisa_campaigns import fetch_cisa_campaigns
 
-from app.srei import compute_srei
-from app.techstack import load_tech_stack
-
+# EASM
+from app.utils.easm import load_inventory, evaluate_exposure, attach as attach_easm
 
 # ---------------------------------------------------------------------------
 # Gather all exploit-related intelligence for a CVE
